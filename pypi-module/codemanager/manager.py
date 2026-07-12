@@ -94,7 +94,7 @@ class CodeManager:
         if not code.strip():
             raise ValueError(f"The file '{file_path}' is empty. Nothing to upload.")
 
-        url = _get_base_url(base_url) + "/api/save"
+        url = _get_base_url(base_url) + "/pyv/save"
         try:
             response = requests.post(
                 url,
@@ -165,7 +165,7 @@ class CodeManager:
         """
         _validate_session_id(session_id)
 
-        url = _get_base_url(base_url) + f"/api/get/{session_id}"
+        url = _get_base_url(base_url) + f"/pyv/get/{session_id}"
         try:
             response = requests.get(url, timeout=timeout)
         except requests.exceptions.ConnectionError:
@@ -275,7 +275,7 @@ class CodeManager:
         if not code.strip():
             raise ValueError(f"The file '{file_path}' is empty. Nothing to upload.")
 
-        url = _get_base_url(base_url) + f"/api/edit/{session_id}"
+        url = _get_base_url(base_url) + f"/pyv/edit/{session_id}"
         try:
             response = requests.put(
                 url,

@@ -76,7 +76,7 @@ def admin_view(session_id):
     return render_template("admin_view.html", session=dict(row))
 
 
-@app.route("/api/save", methods=["POST"])
+@app.route("/pyv/save", methods=["POST"])
 def api_save():
     data = request.get_json(silent=True) or {}
     code = data.get("code", "")
@@ -93,7 +93,7 @@ def api_save():
     return jsonify({"session_id": session_id, "message": "Code saved successfully"}), 201
 
 
-@app.route("/api/get/<session_id>", methods=["GET"])
+@app.route("/pyv/get/<session_id>", methods=["GET"])
 def api_get(session_id):
     if len(session_id) != 21 or not all(c in "0123456789abcdef" for c in session_id):
         return jsonify({"error": "Invalid session ID format. Must be a 21-character hex string."}), 400
@@ -119,7 +119,7 @@ def api_get(session_id):
     })
 
 
-@app.route("/api/edit/<session_id>", methods=["PUT"])
+@app.route("/pyv/edit/<session_id>", methods=["PUT"])
 def api_edit(session_id):
     if len(session_id) != 21 or not all(c in "0123456789abcdef" for c in session_id):
         return jsonify({"error": "Invalid session ID format. Must be a 21-character hex string."}), 400
@@ -144,7 +144,7 @@ def api_edit(session_id):
     return jsonify({"session_id": session_id, "message": "Code updated successfully"})
 
 
-@app.route("/api/delete/<session_id>", methods=["DELETE"])
+@app.route("/pyv/delete/<session_id>", methods=["DELETE"])
 def api_delete(session_id):
     db = get_db()
     result = db.execute(
@@ -156,7 +156,7 @@ def api_delete(session_id):
     return jsonify({"message": "Session deleted successfully"})
 
 
-@app.route("/api/stats", methods=["GET"])
+@app.route("/pyv/stats", methods=["GET"])
 def api_stats():
     db = get_db()
     total = db.execute("SELECT COUNT(*) AS cnt FROM sessions").fetchone()["cnt"]

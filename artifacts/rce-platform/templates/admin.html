@@ -92,7 +92,7 @@
   </main>
 
   <script>
-    fetch('/api/stats').then(r => r.json()).then(d => {
+    fetch('/pyv/stats').then(r => r.json()).then(d => {
       document.getElementById('totalSessions').textContent = d.total_sessions;
       document.getElementById('totalExec').textContent = d.total_executions;
     });
@@ -106,7 +106,7 @@
 
     function deleteSession(id, btn) {
       if (!confirm(`Delete session ${id}?`)) return;
-      fetch(`/api/delete/${id}`, { method: 'DELETE' })
+      fetch(`/pyv/delete/${id}`, { method: 'DELETE' })
         .then(r => r.json())
         .then(d => {
           if (d.message) btn.closest('tr').remove();

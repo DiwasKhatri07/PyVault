@@ -71,7 +71,7 @@ saveBtn.addEventListener('click', async () => {
     try {
       saveBtn.disabled = true;
       saveBtn.textContent = 'Updating…';
-      const res = await fetch(`/api/edit/${editId}`, {
+      const res = await fetch(`/pyv/edit/${editId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ code }),
@@ -89,7 +89,7 @@ saveBtn.addEventListener('click', async () => {
     try {
       saveBtn.disabled = true;
       saveBtn.textContent = 'Saving…';
-      const res = await fetch('/api/save', {
+      const res = await fetch('/pyv/save', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ code }),
@@ -146,7 +146,7 @@ lookupBtn.addEventListener('click', async () => {
   lookupResult.style.display = 'block';
   lookupResult.innerHTML = '<span style="color:var(--text3)">Looking up…</span>';
   try {
-    const res = await fetch(`/api/get/${sid}`);
+    const res = await fetch(`/pyv/get/${sid}`);
     const data = await res.json();
     if (!res.ok) {
       lookupResult.innerHTML = `<span style="color:var(--red)">✕ ${data.error}</span>`;

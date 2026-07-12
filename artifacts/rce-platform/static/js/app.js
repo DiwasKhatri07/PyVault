@@ -1,4 +1,4 @@
-const MAX_CHARS = 10000;
+const MAX_LINES = 10000;
 
 const editor = CodeMirror.fromTextArea(document.getElementById('codeEditor'), {
   mode: 'python',
@@ -33,10 +33,10 @@ const lookupId     = document.getElementById('lookupId');
 const lookupResult = document.getElementById('lookupResult');
 
 function updateCounter() {
-  const len = editor.getValue().length;
-  charCounter.textContent = `${len.toLocaleString()} / 10,000`;
-  charCounter.classList.toggle('char-warn',  len >= 8000 && len < MAX_CHARS);
-  charCounter.classList.toggle('char-limit', len >= MAX_CHARS);
+  const lines = editor.lineCount();
+  charCounter.textContent = `${lines.toLocaleString()} / 10,000 lines`;
+  charCounter.classList.toggle('char-warn',  lines >= 8000 && lines < MAX_LINES);
+  charCounter.classList.toggle('char-limit', lines >= MAX_LINES);
 }
 editor.on('change', updateCounter);
 updateCounter();
@@ -67,8 +67,9 @@ CodeManager.run("${sid}")`;
 saveBtn.addEventListener('click', async () => {
   const code = editor.getValue().trim();
   if (!code) { showError('Please paste some Python code first.'); return; }
-  if (code.length > MAX_CHARS) {
-    showError(`Code is too long (${code.length.toLocaleString()} chars). Maximum is 10,000 characters.`);
+  const lineCount = editor.lineCount();
+  if (lineCount > MAX_LINES) {
+    showError(`Code is too long (${lineCount.toLocaleString()} lines). Maximum is 10,000 lines.`);
     return;
   }
   try {
@@ -115,8 +116,9 @@ fileUpload.addEventListener('change', () => {
   const reader = new FileReader();
   reader.onload = e => {
     const content = e.target.result;
-    if (content.length > MAX_CHARS) {
-      showError(`File is too large (${content.length.toLocaleString()} chars). Maximum is 10,000 characters.`);
+    const fileLines = content.split('\n').length;
+    if (fileLines > MAX_LINES) {
+      showError(`File is too large (${fileLines.toLocaleString()} lines). Maximum is 10,000 lines.`);
       fileUpload.value = '';
       return;
     }

@@ -8,12 +8,21 @@ from flask import (
     Flask, request, jsonify, render_template,
     abort, g, session, redirect, url_for
 )
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SESSION_SECRET", secrets.token_hex(32))
 
+limiter = Limiter(
+    app=app,
+    key_func=get_remote_address,
+    storage_uri="memory://",
+    default_limits=[],
+)
+
 DATABASE = os.path.join(os.path.dirname(__file__), "sessions.db")
-MAX_CODE_CHARS = 10_000
+MAX_CODE_LINES = 10_000
 
 
 def get_db():
@@ -106,27 +115,43 @@ def _validate_sid(session_id):
     )
 
 
-# ── Public pages ───────────────────────────────────────────────────────────────
+def _validate_code(code):
+    """Return (ok, error_message). Checks empty, line count."""
+    if not code or not code.strip():
+        return False, "No Python code provided."
+    lines = code.splitlines()
+    if len(lines) > MAX_CODE_LINES:
+        return False, f"Code exceeds the {MAX_CODE_LINES:,}-line limit ({len(lines):,} lines submitted)."
+    return True, None
+
+
+# ── Public pages ────────────────────────────────────────────────────────────────
 
 @app.route("/")
 def index():
     return render_template("index.html")
 
 
-# ── Admin auth ─────────────────────────────────────────────────────────────────
+# ── Admin auth (rate-limited) ──────────────────────────────────────────────────
 
 @app.route("/admin/login", methods=["GET", "POST"])
+@limiter.limit("10 per minute; 30 per hour", error_message="Too many login attempts. Please wait before trying again.")
 def admin_login():
     if session.get("admin_authed"):
         return redirect(url_for("admin"))
     error = None
     if request.method == "POST":
         token = request.form.get("token", "").strip()
-        if token and token == _get_admin_token():
+        if not token:
+            error = "Access token is required."
+        elif len(token) > 64:
+            error = "Invalid access token."
+        elif token == _get_admin_token():
             session["admin_authed"] = True
             session.permanent = False
             return redirect(url_for("admin"))
-        error = "Invalid access token."
+        else:
+            error = "Invalid access token."
     return render_template("admin_login.html", error=error)
 
 
@@ -136,7 +161,7 @@ def admin_logout():
     return redirect(url_for("admin_login"))
 
 
-# ── Protected admin pages ─────────────────────────────────────────────────────
+# ── Protected admin pages ──────────────────────────────────────────────────────
 
 @app.route("/admin")
 @require_admin
@@ -153,6 +178,8 @@ def admin():
 @app.route("/admin/view/<session_id>")
 @require_admin
 def admin_view(session_id):
+    if not _validate_sid(session_id):
+        abort(400)
     db = get_db()
     row = db.execute("SELECT * FROM sessions WHERE session_id = ?", (session_id,)).fetchone()
     if not row:
@@ -160,25 +187,36 @@ def admin_view(session_id):
     return render_template("admin_view.html", session=dict(row), admin_token=_get_admin_token())
 
 
-# ── Public API ─────────────────────────────────────────────────────────────────
+# ── Public API (rate-limited) ──────────────────────────────────────────────────
 
 @app.route("/pyv/save", methods=["POST"])
+@limiter.limit("30 per minute; 200 per hour")
 def api_save():
     code = ""
-    if request.content_type and "multipart" in request.content_type:
-        f = request.files.get("file")
-        if f:
-            if not f.filename.endswith(".py"):
-                return jsonify({"error": "Only .py files are accepted."}), 400
-            code = f.read().decode("utf-8", errors="replace")
-    else:
-        data = request.get_json(silent=True) or {}
-        code = data.get("code", "")
 
-    if not code or not code.strip():
-        return jsonify({"error": "No Python code provided."}), 400
-    if len(code) > MAX_CODE_CHARS:
-        return jsonify({"error": f"Code exceeds the {MAX_CODE_CHARS:,}-character limit."}), 400
+    # Validate Content-Type
+    ct = request.content_type or ""
+    if "multipart" in ct:
+        f = request.files.get("file")
+        if not f:
+            return jsonify({"error": "No file provided in multipart upload."}), 400
+        if not f.filename.endswith(".py"):
+            return jsonify({"error": "Only .py files are accepted."}), 400
+        raw = f.read(1_000_000)
+        code = raw.decode("utf-8", errors="replace")
+    elif "application/json" in ct:
+        data = request.get_json(silent=True)
+        if data is None:
+            return jsonify({"error": "Invalid JSON body."}), 400
+        code = data.get("code", "")
+        if not isinstance(code, str):
+            return jsonify({"error": "'code' must be a string."}), 400
+    else:
+        return jsonify({"error": "Content-Type must be application/json or multipart/form-data."}), 415
+
+    ok, err = _validate_code(code)
+    if not ok:
+        return jsonify({"error": err}), 400
 
     session_id = generate_session_id()
     db = get_db()
@@ -191,17 +229,19 @@ def api_save():
 
 
 @app.route("/pyv/upload", methods=["POST"])
+@limiter.limit("30 per minute; 200 per hour")
 def api_upload():
     if "file" not in request.files:
         return jsonify({"error": "No file provided. Send a .py file as the 'file' field."}), 400
     f = request.files["file"]
-    if not f.filename.endswith(".py"):
+    if not f.filename or not f.filename.endswith(".py"):
         return jsonify({"error": "Only .py files are accepted."}), 400
-    code = f.read().decode("utf-8", errors="replace")
-    if not code.strip():
-        return jsonify({"error": "The uploaded file is empty."}), 400
-    if len(code) > MAX_CODE_CHARS:
-        return jsonify({"error": f"File exceeds the {MAX_CODE_CHARS:,}-character limit."}), 400
+    raw = f.read(1_000_000)
+    code = raw.decode("utf-8", errors="replace")
+
+    ok, err = _validate_code(code)
+    if not ok:
+        return jsonify({"error": err}), 400
 
     session_id = generate_session_id()
     db = get_db()
@@ -214,6 +254,7 @@ def api_upload():
 
 
 @app.route("/pyv/get/<session_id>", methods=["GET"])
+@limiter.limit("120 per minute")
 def api_get(session_id):
     if not _validate_sid(session_id):
         return jsonify({"error": "Invalid session ID. Must be exactly 21 lowercase hex characters."}), 400
@@ -235,6 +276,7 @@ def api_get(session_id):
 
 
 @app.route("/pyv/info/<session_id>", methods=["GET"])
+@limiter.limit("60 per minute")
 def api_info(session_id):
     if not _validate_sid(session_id):
         return jsonify({"error": "Invalid session ID. Must be exactly 21 lowercase hex characters."}), 400
@@ -255,6 +297,7 @@ def api_info(session_id):
 
 
 @app.route("/pyv/stats", methods=["GET"])
+@limiter.limit("30 per minute")
 def api_stats():
     db = get_db()
     total = db.execute("SELECT COUNT(*) AS cnt FROM sessions").fetchone()["cnt"]
@@ -262,7 +305,7 @@ def api_stats():
     return jsonify({"total_sessions": total, "total_executions": total_exec})
 
 
-# ── Admin-only API (require X-Admin-Token header) ─────────────────────────────
+# ── Admin-only API ─────────────────────────────────────────────────────────────
 
 @app.route("/pyv/edit/<session_id>", methods=["PUT"])
 @require_admin_api
@@ -273,12 +316,15 @@ def api_edit(session_id):
     row = db.execute("SELECT 1 FROM sessions WHERE session_id = ?", (session_id,)).fetchone()
     if not row:
         return jsonify({"error": f"Session '{session_id}' not found."}), 404
-    data = request.get_json(silent=True) or {}
+    data = request.get_json(silent=True)
+    if data is None:
+        return jsonify({"error": "Invalid JSON body."}), 400
     new_code = data.get("code", "")
-    if not new_code or not new_code.strip():
-        return jsonify({"error": "No updated code provided."}), 400
-    if len(new_code) > MAX_CODE_CHARS:
-        return jsonify({"error": f"Code exceeds the {MAX_CODE_CHARS:,}-character limit."}), 400
+    if not isinstance(new_code, str):
+        return jsonify({"error": "'code' must be a string."}), 400
+    ok, err = _validate_code(new_code)
+    if not ok:
+        return jsonify({"error": err}), 400
     db.execute("UPDATE sessions SET python_code = ? WHERE session_id = ?", (new_code, session_id))
     db.commit()
     return jsonify({"session_id": session_id, "message": "Code updated successfully."})
@@ -287,6 +333,8 @@ def api_edit(session_id):
 @app.route("/pyv/delete/<session_id>", methods=["DELETE"])
 @require_admin_api
 def api_delete(session_id):
+    if not _validate_sid(session_id):
+        return jsonify({"error": "Invalid session ID."}), 400
     db = get_db()
     result = db.execute("DELETE FROM sessions WHERE session_id = ?", (session_id,))
     db.commit()
@@ -295,7 +343,12 @@ def api_delete(session_id):
     return jsonify({"message": "Session deleted successfully."})
 
 
-# ── Error handlers ─────────────────────────────────────────────────────────────
+# ── Rate limit error handler ───────────────────────────────────────────────────
+
+@app.errorhandler(429)
+def ratelimit_error(e):
+    return jsonify({"error": f"Rate limit exceeded: {e.description}"}), 429
+
 
 @app.errorhandler(404)
 def not_found(e):

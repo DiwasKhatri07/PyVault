@@ -5,7 +5,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name="PyVaultRCE",
-    version="2.0.0",
+    version="2.0.1",
     author="PyVault",
     description="Remote Code Execution & Hosting client for PyVault — source never exposed",
     long_description=long_description,

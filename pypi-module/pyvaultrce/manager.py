@@ -16,7 +16,7 @@ except ImportError:
     )
 
 _DEFAULT_BASE = os.environ.get("PYVAULT_URL", "http://localhost:5000")
-_MAX_CHARS    = 10_000
+_MAX_LINES    = 10_000
 _SID_LEN      = 21
 _HEX_SET      = frozenset("0123456789abcdef")
 
@@ -103,9 +103,19 @@ def _http_get(url: str, timeout: int, headers: Optional[dict] = None) -> request
     try:
         return requests.get(url, timeout=timeout, headers=headers or {})
     except requests.exceptions.ConnectionError:
+        _hint = ""
+        if "localhost" in url or "127.0.0.1" in url:
+            _hint = (
+                "\n\n  ✗ PYVAULT_URL is not set — defaulting to localhost will not work "
+                "on a phone or remote machine.\n"
+                "  → Set it before running:\n"
+                "       import os\n"
+                "       os.environ['PYVAULT_URL'] = 'https://your-server.replit.app'\n"
+                "    or in your shell:\n"
+                "       export PYVAULT_URL=https://your-server.replit.app"
+            )
         raise ConnectionError(
-            f"Unable to connect at '{url}'. "
-            "Ensure the server is running and PYVAULT_URL is set correctly."
+            f"Unable to connect to PyVault at '{url}'.{_hint}"
         )
     except requests.exceptions.Timeout:
         raise TimeoutError(f"Request to '{url}' timed out after {timeout}s.")

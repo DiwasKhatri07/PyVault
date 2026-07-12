@@ -1,0 +1,27 @@
+kind = "web"
+  previewPath = "/"
+  title = "PyVault — RCE Platform"
+  version = "1.0.0"
+
+  [[services]]
+  localPort = 5000
+  name = "PyVault"
+  paths = ["/"]
+
+  [services.development]
+  run = "cd artifacts/rce-platform && python app.py"
+
+  [services.production]
+
+  [services.production.build]
+  args = ["echo", "no-build"]
+
+  [services.production.run]
+  args = ["python", "artifacts/rce-platform/app.py"]
+
+  [services.production.run.env]
+  PORT = "5000"
+
+  [services.production.health.startup]
+  path = "/"
+  

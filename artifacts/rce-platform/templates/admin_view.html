@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Session {{ session.session_id }} — PyVault Admin</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/dracula.min.css" />
+  <link rel="stylesheet" href="/static/css/style.css" />
+</head>
+<body>
+  <nav class="navbar">
+    <div class="nav-brand">
+      <span class="brand-icon">⬡</span>
+      <span class="brand-name">PyVault</span>
+      <span class="nav-badge">Admin</span>
+    </div>
+    <div class="nav-links">
+      <a href="/" class="nav-link">Paste</a>
+      <a href="/admin" class="nav-link active">Admin</a>
+    </div>
+  </nav>
+
+  <main class="main-container">
+    <div class="breadcrumb">
+      <a href="/admin" class="breadcrumb-link">← Back to Sessions</a>
+    </div>
+
+    <div class="session-detail-header">
+      <div>
+        <h1 class="page-title">Session Detail</h1>
+        <code class="session-id-large">{{ session.session_id }}</code>
+      </div>
+      <div class="detail-meta">
+        <div class="meta-pill">
+          <span class="meta-pill-label">Executions</span>
+          <span class="meta-pill-value exec-badge {% if session.execution_count > 10 %}exec-high{% elif session.execution_count > 0 %}exec-mid{% else %}exec-zero{% endif %}">{{ session.execution_count }}</span>
+        </div>
+        <div class="meta-pill">
+          <span class="meta-pill-label">Created</span>
+          <span class="meta-pill-value">{{ session.created_at }}</span>
+        </div>
+        <div class="meta-pill">
+          <span class="meta-pill-label">Code Size</span>
+          <span class="meta-pill-value">{{ session.python_code | length }} chars</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="card editor-card">
+      <div class="card-header">
+        <div class="card-title">
+          <span class="dot dot-red"></span>
+          <span class="dot dot-yellow"></span>
+          <span class="dot dot-green"></span>
+          <span class="editor-label">Stored Python Code (Read-Only)</span>
+        </div>
+        <button class="btn btn-ghost btn-sm" id="copyCodeBtn">Copy Code</button>
+      </div>
+      <textarea id="codeViewer">{{ session.python_code }}</textarea>
+    </div>
+
+    <div class="usage-block" style="margin-top: 1.5rem;">
+      <p class="usage-title">Execute this session via PyPI module:</p>
+      <pre class="usage-code">from codemanager import CodeManager
+
+CodeManager.run("{{ session.session_id }}")</pre>
+    </div>
+  </main>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/python/python.min.js"></script>
+  <script>
+    const editor = CodeMirror.fromTextArea(document.getElementById('codeViewer'), {
+      mode: 'python',
+      theme: 'dracula',
+      lineNumbers: true,
+      readOnly: true,
+      matchBrackets: true,
+      lineWrapping: true,
+    });
+    editor.setSize(null, 500);
+
+    document.getElementById('copyCodeBtn').addEventListener('click', () => {
+      navigator.clipboard.writeText(editor.getValue()).then(() => {
+        document.getElementById('copyCodeBtn').textContent = 'Copied!';
+        setTimeout(() => { document.getElementById('copyCodeBtn').textContent = 'Copy Code'; }, 2000);
+      });
+    });
+  </script>
+</body>
+</html>

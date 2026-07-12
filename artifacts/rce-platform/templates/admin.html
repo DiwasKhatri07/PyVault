@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PyVault Admin</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/css/style.css" />
+</head>
+<body>
+  <nav class="navbar">
+    <div class="nav-brand">
+      <span class="brand-icon">⬡</span>
+      <span class="brand-name">PyVault</span>
+      <span class="nav-badge">Admin</span>
+    </div>
+    <div class="nav-links">
+      <a href="/" class="nav-link">Paste</a>
+      <a href="/admin" class="nav-link active">Admin</a>
+    </div>
+  </nav>
+
+  <main class="main-container">
+    <div class="admin-header">
+      <h1 class="page-title">Session Monitor</h1>
+      <div class="stats-row" id="statsRow">
+        <div class="stat-card">
+          <span class="stat-value" id="totalSessions">—</span>
+          <span class="stat-label">Total Sessions</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-value" id="totalExec">—</span>
+          <span class="stat-label">Total Executions</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-value">{{ sessions|length }}</span>
+          <span class="stat-label">Loaded</span>
+        </div>
+      </div>
+    </div>
+
+    {% if sessions %}
+    <div class="table-card card">
+      <div class="card-header">
+        <span class="card-title-text">All Sessions</span>
+        <div class="table-controls">
+          <input type="text" id="searchInput" class="input-field input-sm" placeholder="Search session ID…" />
+        </div>
+      </div>
+      <div class="table-wrapper">
+        <table class="data-table" id="sessionsTable">
+          <thead>
+            <tr>
+              <th>Session ID</th>
+              <th>Code Size</th>
+              <th>Executions</th>
+              <th>Created At</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for s in sessions %}
+            <tr class="table-row" data-id="{{ s.session_id }}">
+              <td><code class="mono-id">{{ s.session_id }}</code></td>
+              <td>{{ s.code_size }} chars</td>
+              <td>
+                <span class="exec-badge {% if s.execution_count > 10 %}exec-high{% elif s.execution_count > 0 %}exec-mid{% else %}exec-zero{% endif %}">
+                  {{ s.execution_count }}
+                </span>
+              </td>
+              <td class="muted">{{ s.created_at }}</td>
+              <td>
+                <div class="action-btns">
+                  <a href="/admin/view/{{ s.session_id }}" class="btn btn-xs btn-outline">View</a>
+                  <button class="btn btn-xs btn-danger" onclick="deleteSession('{{ s.session_id }}', this)">Delete</button>
+                </div>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% else %}
+    <div class="empty-state card">
+      <div class="empty-icon">📭</div>
+      <h3>No sessions yet</h3>
+      <p>Go to the <a href="/">Paste page</a> and save your first Python script.</p>
+    </div>
+    {% endif %}
+  </main>
+
+  <script>
+    fetch('/api/stats').then(r => r.json()).then(d => {
+      document.getElementById('totalSessions').textContent = d.total_sessions;
+      document.getElementById('totalExec').textContent = d.total_executions;
+    });
+
+    document.getElementById('searchInput')?.addEventListener('input', function() {
+      const q = this.value.toLowerCase();
+      document.querySelectorAll('#sessionsTable tbody tr').forEach(row => {
+        row.style.display = row.dataset.id.toLowerCase().includes(q) ? '' : 'none';
+      });
+    });
+
+    function deleteSession(id, btn) {
+      if (!confirm(`Delete session ${id}?`)) return;
+      fetch(`/api/delete/${id}`, { method: 'DELETE' })
+        .then(r => r.json())
+        .then(d => {
+          if (d.message) btn.closest('tr').remove();
+          else alert(d.error);
+        });
+    }
+  </script>
+</body>
+</html>

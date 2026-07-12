@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PyVault — Remote Code Hosting</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/dracula.min.css" />
+  <link rel="stylesheet" href="/static/css/style.css" />
+</head>
+<body>
+  <nav class="navbar">
+    <div class="nav-brand">
+      <span class="brand-icon">⬡</span>
+      <span class="brand-name">PyVault</span>
+    </div>
+    <div class="nav-links">
+      <a href="/" class="nav-link active">Paste</a>
+      <a href="/admin" class="nav-link">Admin</a>
+    </div>
+  </nav>
+
+  <main class="main-container">
+    <div class="hero">
+      <h1 class="hero-title">Remote Code Hosting</h1>
+      <p class="hero-sub">Upload Python scripts, get a secure Session ID, execute remotely — source never exposed.</p>
+    </div>
+
+    <div class="card editor-card">
+      <div class="card-header">
+        <div class="card-title">
+          <span class="dot dot-red"></span>
+          <span class="dot dot-yellow"></span>
+          <span class="dot dot-green"></span>
+          <span class="editor-label">Python Editor</span>
+        </div>
+        <div class="editor-actions">
+          <button class="btn btn-ghost btn-sm" id="clearBtn">Clear</button>
+          <button class="btn btn-ghost btn-sm" id="formatBtn">Format</button>
+        </div>
+      </div>
+      <textarea id="codeEditor" placeholder="# Paste your Python code here..."></textarea>
+    </div>
+
+    <div class="action-row">
+      <div class="session-edit-row" id="editSection" style="display:none">
+        <div class="input-group">
+          <label class="input-label">Edit existing session (optional)</label>
+          <input type="text" id="editSessionId" class="input-field" placeholder="Enter 21-char hex Session ID to update" maxlength="21" />
+        </div>
+      </div>
+      <div class="btn-group">
+        <button class="btn btn-primary" id="saveBtn">
+          <span class="btn-icon">↑</span> Save & Get Session ID
+        </button>
+        <button class="btn btn-outline" id="toggleEdit">Update Existing</button>
+      </div>
+    </div>
+
+    <div id="resultBox" class="result-box" style="display:none">
+      <div class="result-header">
+        <span class="result-badge" id="resultBadge">NEW SESSION</span>
+        <span class="result-time" id="resultTime"></span>
+      </div>
+      <div class="session-id-display">
+        <span class="session-label">Session ID</span>
+        <div class="session-id-row">
+          <code class="session-id-code" id="sessionIdText"></code>
+          <button class="btn btn-icon-only" id="copyBtn" title="Copy to clipboard">
+            <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+      <div class="result-meta">
+        <div class="meta-item">
+          <span class="meta-label">Character Length</span>
+          <span class="meta-value" id="codeLength">—</span>
+        </div>
+        <div class="meta-item">
+          <span class="meta-label">Hex Characters</span>
+          <span class="meta-value">21</span>
+        </div>
+      </div>
+      <div class="usage-block">
+        <p class="usage-title">Use with PyPI module:</p>
+        <pre class="usage-code" id="usageCode"></pre>
+      </div>
+    </div>
+
+    <div id="errorBox" class="error-box" style="display:none">
+      <span class="error-icon">✕</span>
+      <span id="errorMsg"></span>
+    </div>
+
+    <div class="lookup-card card">
+      <div class="card-header">
+        <span class="card-title-text">Retrieve / Verify Session</span>
+      </div>
+      <div class="lookup-row">
+        <input type="text" id="lookupId" class="input-field" placeholder="Enter 21-char Session ID" maxlength="21" />
+        <button class="btn btn-outline" id="lookupBtn">Look Up</button>
+      </div>
+      <div id="lookupResult" class="lookup-result" style="display:none"></div>
+    </div>
+  </main>
+
+  <footer class="footer">
+    <p>PyVault — Secure Remote Code Hosting &nbsp;·&nbsp; Source never exposed to client</p>
+  </footer>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/python/python.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/edit/matchbrackets.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/edit/closebrackets.min.js"></script>
+  <script src="/static/js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,32 @@
+kind = "web"
+  previewPath = "/"
+  title = "PyVault — RCE Platform"
+  version = "1.0.0"
+  id = "artifacts/rce-platform"
+  router = "path"
+
+  [[integratedSkills]]
+  name = "react-vite"
+  version = "1.0.0"
+
+  [[services]]
+  name = "web"
+  paths = [ "/" ]
+  localPort = 5000
+
+  [services.development]
+  run = "cd /home/runner/workspace/artifacts/rce-platform && python app.py"
+
+  [services.production]
+  build = [ "echo", "no-build" ]
+  publicDir = "artifacts/rce-platform/dist/public"
+  serve = "static"
+
+  [[services.production.rewrites]]
+  from = "/*"
+  to = "/index.html"
+
+  [services.env]
+  PORT = "5000"
+  BASE_PATH = "/"
+  

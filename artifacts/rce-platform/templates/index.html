@@ -18,7 +18,7 @@
     </div>
     <div class="nav-links">
       <a href="/" class="nav-link active">Paste</a>
-      <a href="/admin" class="nav-link">Admin</a>
+      <a href="/admin/login" class="nav-link">Admin</a>
     </div>
   </nav>
 
@@ -37,6 +37,7 @@
           <span class="editor-label">Python Editor</span>
         </div>
         <div class="editor-actions">
+          <span class="char-counter" id="charCounter">0 / 10,000</span>
           <button class="btn btn-ghost btn-sm" id="clearBtn">Clear</button>
           <button class="btn btn-ghost btn-sm" id="formatBtn">Format</button>
         </div>
@@ -45,17 +46,20 @@
     </div>
 
     <div class="action-row">
-      <div class="session-edit-row" id="editSection" style="display:none">
-        <div class="input-group">
-          <label class="input-label">Edit existing session (optional)</label>
-          <input type="text" id="editSessionId" class="input-field" placeholder="Enter 21-char hex Session ID to update" maxlength="21" />
-        </div>
+      <div class="upload-row">
+        <label class="upload-label" for="fileUpload">
+          <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
+          </svg>
+          Upload .py file
+        </label>
+        <input type="file" id="fileUpload" accept=".py" style="display:none" />
+        <span id="uploadName" class="upload-filename"></span>
       </div>
       <div class="btn-group">
         <button class="btn btn-primary" id="saveBtn">
           <span class="btn-icon">↑</span> Save & Get Session ID
         </button>
-        <button class="btn btn-outline" id="toggleEdit">Update Existing</button>
       </div>
     </div>
 
@@ -86,7 +90,7 @@
         </div>
       </div>
       <div class="usage-block">
-        <p class="usage-title">Use with PyPI module:</p>
+        <p class="usage-title">Use with PyVaultRCE module:</p>
         <pre class="usage-code" id="usageCode"></pre>
       </div>
     </div>

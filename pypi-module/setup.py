@@ -4,10 +4,10 @@ with open("README.md", "r", encoding="utf-8") as fh:
     long_description = fh.read()
 
 setup(
-    name="codemanager",
-    version="1.0.0",
+    name="PyVaultRCE",
+    version="2.0.0",
     author="PyVault",
-    description="Remote Code Execution & Hosting client for PyVault",
+    description="Remote Code Execution & Hosting client for PyVault — source never exposed",
     long_description=long_description,
     long_description_content_type="text/markdown",
     packages=find_packages(),
@@ -20,6 +20,9 @@ setup(
         "License :: OSI Approved :: MIT License",
         "Operating System :: OS Independent",
         "Topic :: Software Development :: Libraries",
+        "Topic :: Security",
+        "Topic :: Internet :: WWW/HTTP",
     ],
+    keywords="remote execution code hosting vault rce session",
     entry_points={},
 )

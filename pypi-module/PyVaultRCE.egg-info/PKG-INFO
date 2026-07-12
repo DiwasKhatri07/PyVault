@@ -1,3 +1,27 @@
+Metadata-Version: 2.4
+Name: PyVaultRCE
+Version: 2.0.0
+Summary: Remote Code Execution & Hosting client for PyVault — source never exposed
+Author: PyVault
+Keywords: remote execution code hosting vault rce session
+Classifier: Programming Language :: Python :: 3
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: OS Independent
+Classifier: Topic :: Software Development :: Libraries
+Classifier: Topic :: Security
+Classifier: Topic :: Internet :: WWW/HTTP
+Requires-Python: >=3.8
+Description-Content-Type: text/markdown
+Requires-Dist: requests>=2.28.0
+Dynamic: author
+Dynamic: classifier
+Dynamic: description
+Dynamic: description-content-type
+Dynamic: keywords
+Dynamic: requires-dist
+Dynamic: requires-python
+Dynamic: summary
+
 # PyVaultRCE
 
 Remote Code Execution & Hosting client for **PyVault**.

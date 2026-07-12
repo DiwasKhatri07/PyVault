@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PyVault — Admin Login</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/css/style.css" />
+</head>
+<body>
+  <nav class="navbar">
+    <div class="nav-brand">
+      <span class="brand-icon">⬡</span>
+      <span class="brand-name">PyVault</span>
+    </div>
+    <div class="nav-links">
+      <a href="/" class="nav-link">Paste</a>
+    </div>
+  </nav>
+
+  <div class="login-wrap">
+    <div class="login-card card">
+      <div class="login-header">
+        <div class="login-icon">🔐</div>
+        <h2 class="login-title">Admin Access</h2>
+        <p class="login-sub">Enter your 21-character access token to continue.</p>
+      </div>
+      <form method="POST" action="/admin/login" class="login-form">
+        <div class="input-group">
+          <label class="input-label" for="tokenInput">Access Token</label>
+          <input
+            type="password"
+            id="tokenInput"
+            name="token"
+            class="input-field login-token-input"
+            placeholder="Enter 21-char hex access token"
+            maxlength="64"
+            autocomplete="current-password"
+            autofocus
+          />
+        </div>
+        {% if error %}
+        <div class="login-error">
+          <span class="error-icon">✕</span>
+          {{ error }}
+        </div>
+        {% endif %}
+        <button type="submit" class="btn btn-primary login-btn">Unlock Admin Panel</button>
+      </form>
+      <p class="login-hint">Token is printed to server console on first startup.</p>
+    </div>
+  </div>
+
+  <footer class="footer">
+    <p>PyVault — Secure Remote Code Hosting</p>
+  </footer>
+</body>
+</html>

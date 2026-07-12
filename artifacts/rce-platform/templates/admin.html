@@ -18,6 +18,7 @@
     <div class="nav-links">
       <a href="/" class="nav-link">Paste</a>
       <a href="/admin" class="nav-link active">Admin</a>
+      <a href="/admin/logout" class="nav-link" style="color:var(--red)">Logout</a>
     </div>
   </nav>
 
@@ -92,6 +93,8 @@
   </main>
 
   <script>
+    const ADMIN_TOKEN = "{{ admin_token }}";
+
     fetch('/pyv/stats').then(r => r.json()).then(d => {
       document.getElementById('totalSessions').textContent = d.total_sessions;
       document.getElementById('totalExec').textContent = d.total_executions;
@@ -105,13 +108,21 @@
     });
 
     function deleteSession(id, btn) {
-      if (!confirm(`Delete session ${id}?`)) return;
-      fetch(`/pyv/delete/${id}`, { method: 'DELETE' })
+      if (!confirm(`Delete session ${id}?\n\nThis cannot be undone.`)) return;
+      fetch(`/pyv/delete/${id}`, {
+        method: 'DELETE',
+        headers: { 'X-Admin-Token': ADMIN_TOKEN }
+      })
         .then(r => r.json())
         .then(d => {
-          if (d.message) btn.closest('tr').remove();
-          else alert(d.error);
-        });
+          if (d.message) {
+            btn.closest('tr').style.opacity = '0.3';
+            setTimeout(() => btn.closest('tr').remove(), 300);
+          } else {
+            alert('Error: ' + d.error);
+          }
+        })
+        .catch(() => alert('Network error — could not delete session.'));
     }
   </script>
 </body>

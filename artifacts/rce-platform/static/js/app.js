@@ -1,3 +1,5 @@
+const MAX_CHARS = 10000;
+
 const editor = CodeMirror.fromTextArea(document.getElementById('codeEditor'), {
   mode: 'python',
   theme: 'dracula',
@@ -12,102 +14,86 @@ const editor = CodeMirror.fromTextArea(document.getElementById('codeEditor'), {
 });
 editor.setSize(null, 380);
 
-const saveBtn   = document.getElementById('saveBtn');
-const clearBtn  = document.getElementById('clearBtn');
-const formatBtn = document.getElementById('formatBtn');
-const toggleEdit= document.getElementById('toggleEdit');
-const editSection = document.getElementById('editSection');
-const editSessionIdInput = document.getElementById('editSessionId');
-
-const resultBox   = document.getElementById('resultBox');
-const errorBox    = document.getElementById('errorBox');
+const saveBtn      = document.getElementById('saveBtn');
+const clearBtn     = document.getElementById('clearBtn');
+const formatBtn    = document.getElementById('formatBtn');
+const charCounter  = document.getElementById('charCounter');
+const fileUpload   = document.getElementById('fileUpload');
+const uploadName   = document.getElementById('uploadName');
+const resultBox    = document.getElementById('resultBox');
+const errorBox     = document.getElementById('errorBox');
 const sessionIdText= document.getElementById('sessionIdText');
 const resultBadge  = document.getElementById('resultBadge');
 const resultTime   = document.getElementById('resultTime');
 const codeLength   = document.getElementById('codeLength');
 const usageCode    = document.getElementById('usageCode');
 const copyBtn      = document.getElementById('copyBtn');
-
 const lookupBtn    = document.getElementById('lookupBtn');
 const lookupId     = document.getElementById('lookupId');
 const lookupResult = document.getElementById('lookupResult');
 
-let isEditMode = false;
+function updateCounter() {
+  const len = editor.getValue().length;
+  charCounter.textContent = `${len.toLocaleString()} / 10,000`;
+  charCounter.classList.toggle('char-warn',  len >= 8000 && len < MAX_CHARS);
+  charCounter.classList.toggle('char-limit', len >= MAX_CHARS);
+}
+editor.on('change', updateCounter);
+updateCounter();
 
 function showError(msg) {
   errorBox.style.display = 'flex';
   document.getElementById('errorMsg').textContent = msg;
   resultBox.style.display = 'none';
-  setTimeout(() => { errorBox.style.display = 'none'; }, 6000);
+  setTimeout(() => { errorBox.style.display = 'none'; }, 7000);
 }
 
-function showResult(sid, isUpdate, codeLen) {
+function showResult(sid, codeLen) {
   errorBox.style.display = 'none';
   resultBox.style.display = 'block';
   sessionIdText.textContent = sid;
-  resultBadge.textContent = isUpdate ? 'UPDATED SESSION' : 'NEW SESSION';
-  resultBadge.style.color = isUpdate ? '#f7c948' : '#3ddfa0';
-  resultBadge.style.borderColor = isUpdate ? 'rgba(247,201,72,0.3)' : 'rgba(61,223,160,0.3)';
+  resultBadge.textContent = 'NEW SESSION';
+  resultBadge.style.color = '#3ddfa0';
+  resultBadge.style.borderColor = 'rgba(61,223,160,0.3)';
   resultTime.textContent = new Date().toLocaleTimeString();
-  codeLength.textContent = codeLen + ' chars';
+  codeLength.textContent = codeLen.toLocaleString() + ' chars';
   usageCode.textContent =
-`from codemanager import CodeManager
+`from pyvaultrce import CodeManager
 
-# Execute remotely (source not exposed):
-CodeManager.run("${sid}")
-
-# Or edit/update later:
-# CodeManager.edit("${sid}", "path/to/updated.py")`;
+# Execute remotely — source stays server-side:
+CodeManager.run("${sid}")`;
 }
 
 saveBtn.addEventListener('click', async () => {
   const code = editor.getValue().trim();
   if (!code) { showError('Please paste some Python code first.'); return; }
-
-  const editId = editSessionIdInput?.value.trim();
-
-  if (isEditMode && editId) {
-    if (editId.length !== 21) { showError('Session ID must be exactly 21 hex characters.'); return; }
-    try {
-      saveBtn.disabled = true;
-      saveBtn.textContent = 'Updating…';
-      const res = await fetch(`/pyv/edit/${editId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code }),
-      });
-      const data = await res.json();
-      if (!res.ok) { showError(data.error || 'Update failed.'); return; }
-      showResult(data.session_id, true, code.length);
-    } catch (e) {
-      showError('Network error: ' + e.message);
-    } finally {
-      saveBtn.disabled = false;
-      saveBtn.innerHTML = '<span class="btn-icon">↑</span> Save & Get Session ID';
-    }
-  } else {
-    try {
-      saveBtn.disabled = true;
-      saveBtn.textContent = 'Saving…';
-      const res = await fetch('/pyv/save', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code }),
-      });
-      const data = await res.json();
-      if (!res.ok) { showError(data.error || 'Save failed.'); return; }
-      showResult(data.session_id, false, code.length);
-    } catch (e) {
-      showError('Network error: ' + e.message);
-    } finally {
-      saveBtn.disabled = false;
-      saveBtn.innerHTML = '<span class="btn-icon">↑</span> Save & Get Session ID';
-    }
+  if (code.length > MAX_CHARS) {
+    showError(`Code is too long (${code.length.toLocaleString()} chars). Maximum is 10,000 characters.`);
+    return;
+  }
+  try {
+    saveBtn.disabled = true;
+    saveBtn.textContent = 'Saving…';
+    const res = await fetch('/pyv/save', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code }),
+    });
+    const data = await res.json();
+    if (!res.ok) { showError(data.error || 'Save failed.'); return; }
+    showResult(data.session_id, code.length);
+  } catch (e) {
+    showError('Network error: ' + e.message);
+  } finally {
+    saveBtn.disabled = false;
+    saveBtn.innerHTML = '<span class="btn-icon">↑</span> Save & Get Session ID';
   }
 });
 
 clearBtn.addEventListener('click', () => {
   editor.setValue('');
+  uploadName.textContent = '';
+  fileUpload.value = '';
   resultBox.style.display = 'none';
   errorBox.style.display = 'none';
 });
@@ -118,13 +104,29 @@ formatBtn.addEventListener('click', () => {
   editor.setValue(trimmed);
 });
 
-toggleEdit.addEventListener('click', () => {
-  isEditMode = !isEditMode;
-  editSection.style.display = isEditMode ? 'flex' : 'none';
-  toggleEdit.textContent = isEditMode ? 'Cancel Update' : 'Update Existing';
-  toggleEdit.classList.toggle('btn-outline', !isEditMode);
-  toggleEdit.classList.toggle('btn-ghost', isEditMode);
+fileUpload.addEventListener('change', () => {
+  const file = fileUpload.files[0];
+  if (!file) return;
+  if (!file.name.endsWith('.py')) {
+    showError('Only .py files are accepted.');
+    fileUpload.value = '';
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = e => {
+    const content = e.target.result;
+    if (content.length > MAX_CHARS) {
+      showError(`File is too large (${content.length.toLocaleString()} chars). Maximum is 10,000 characters.`);
+      fileUpload.value = '';
+      return;
+    }
+    editor.setValue(content);
+    uploadName.textContent = file.name;
+  };
+  reader.readAsText(file, 'utf-8');
 });
+
+document.querySelector('.upload-label').addEventListener('click', () => fileUpload.click());
 
 copyBtn.addEventListener('click', () => {
   navigator.clipboard.writeText(sessionIdText.textContent).then(() => {
@@ -140,13 +142,13 @@ lookupBtn.addEventListener('click', async () => {
   if (!sid) { lookupResult.style.display = 'none'; return; }
   if (sid.length !== 21) {
     lookupResult.style.display = 'block';
-    lookupResult.innerHTML = `<span style="color:var(--red)">Session ID must be 21 hex characters.</span>`;
+    lookupResult.innerHTML = `<span style="color:var(--red)">Session ID must be exactly 21 hex characters.</span>`;
     return;
   }
   lookupResult.style.display = 'block';
   lookupResult.innerHTML = '<span style="color:var(--text3)">Looking up…</span>';
   try {
-    const res = await fetch(`/pyv/get/${sid}`);
+    const res = await fetch(`/pyv/info/${sid}`);
     const data = await res.json();
     if (!res.ok) {
       lookupResult.innerHTML = `<span style="color:var(--red)">✕ ${data.error}</span>`;
@@ -158,7 +160,7 @@ lookupBtn.addEventListener('click', async () => {
             <span style="color:var(--text3);font-size:12px;">Executions: <strong style="color:var(--yellow)">${data.execution_count}</strong></span>
             <span style="color:var(--text3);font-size:12px;">Created: ${data.created_at}</span>
           </div>
-          <div style="font-size:12px;color:var(--text2);">Code length: ${data.code.length} characters</div>
+          <div style="font-size:12px;color:var(--text2);">Code size: ${data.code_size.toLocaleString()} characters</div>
         </div>`;
     }
   } catch (e) {

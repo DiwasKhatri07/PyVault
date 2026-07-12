@@ -20,6 +20,7 @@
     <div class="nav-links">
       <a href="/" class="nav-link">Paste</a>
       <a href="/admin" class="nav-link active">Admin</a>
+      <a href="/admin/logout" class="nav-link" style="color:var(--red)">Logout</a>
     </div>
   </nav>
 
@@ -63,31 +64,82 @@
     </div>
 
     <div class="usage-block" style="margin-top: 1.5rem;">
-      <p class="usage-title">Execute this session via PyPI module:</p>
-      <pre class="usage-code">from codemanager import CodeManager
+      <p class="usage-title">Execute this session via PyVaultRCE module:</p>
+      <pre class="usage-code">from pyvaultrce import CodeManager
 
 CodeManager.run("{{ session.session_id }}")</pre>
+    </div>
+
+    <div class="admin-edit-block card" style="margin-top:1.5rem;">
+      <div class="card-header">
+        <span class="card-title-text">Edit Session Code (Admin Only)</span>
+      </div>
+      <div style="padding:1rem;">
+        <textarea id="editCodeArea" style="display:none">{{ session.python_code }}</textarea>
+        <div id="editEditor"></div>
+        <div style="display:flex;gap:0.75rem;margin-top:1rem;align-items:center;">
+          <button class="btn btn-primary btn-sm" id="saveEditBtn">Save Changes</button>
+          <span id="editStatus" style="font-size:12px;color:var(--text3);"></span>
+        </div>
+      </div>
     </div>
   </main>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/python/python.min.js"></script>
   <script>
-    const editor = CodeMirror.fromTextArea(document.getElementById('codeViewer'), {
-      mode: 'python',
-      theme: 'dracula',
-      lineNumbers: true,
-      readOnly: true,
-      matchBrackets: true,
-      lineWrapping: true,
+    const ADMIN_TOKEN = "{{ admin_token }}";
+    const SESSION_ID  = "{{ session.session_id }}";
+
+    const viewer = CodeMirror.fromTextArea(document.getElementById('codeViewer'), {
+      mode: 'python', theme: 'dracula', lineNumbers: true,
+      readOnly: true, matchBrackets: true, lineWrapping: true,
     });
-    editor.setSize(null, 500);
+    viewer.setSize(null, 400);
+
+    const editCm = CodeMirror(document.getElementById('editEditor'), {
+      value: document.getElementById('editCodeArea').value,
+      mode: 'python', theme: 'dracula', lineNumbers: true,
+      matchBrackets: true, autoCloseBrackets: true, lineWrapping: true,
+      indentUnit: 4, tabSize: 4,
+    });
+    editCm.setSize(null, 320);
 
     document.getElementById('copyCodeBtn').addEventListener('click', () => {
-      navigator.clipboard.writeText(editor.getValue()).then(() => {
+      navigator.clipboard.writeText(viewer.getValue()).then(() => {
         document.getElementById('copyCodeBtn').textContent = 'Copied!';
         setTimeout(() => { document.getElementById('copyCodeBtn').textContent = 'Copy Code'; }, 2000);
       });
+    });
+
+    document.getElementById('saveEditBtn').addEventListener('click', async () => {
+      const code = editCm.getValue();
+      const status = document.getElementById('editStatus');
+      if (!code.trim()) { status.textContent = 'Code cannot be empty.'; status.style.color = 'var(--red)'; return; }
+      try {
+        document.getElementById('saveEditBtn').disabled = true;
+        status.textContent = 'Saving…';
+        status.style.color = 'var(--text3)';
+        const res = await fetch(`/pyv/edit/${SESSION_ID}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json', 'X-Admin-Token': ADMIN_TOKEN },
+          body: JSON.stringify({ code }),
+        });
+        const data = await res.json();
+        if (res.ok) {
+          status.textContent = '✓ Saved successfully.';
+          status.style.color = 'var(--green)';
+          viewer.setValue(code);
+        } else {
+          status.textContent = '✕ ' + data.error;
+          status.style.color = 'var(--red)';
+        }
+      } catch (e) {
+        status.textContent = 'Network error: ' + e.message;
+        status.style.color = 'var(--red)';
+      } finally {
+        document.getElementById('saveEditBtn').disabled = false;
+      }
     });
   </script>
 </body>

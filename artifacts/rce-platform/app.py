@@ -1,8 +1,9 @@
+import hashlib
 import os
 import secrets
 import sqlite3
 import traceback
-from datetime import datetime
+from datetime import datetime, timedelta
 from functools import wraps
 from flask import (
     Flask, request, jsonify, render_template,
@@ -32,6 +33,8 @@ _CIPHER_KEY = os.environ.get(
 _cipher = Fernet(_CIPHER_KEY)
 
 
+# ── Crypto helpers ─────────────────────────────────────────────────────────────
+
 def _encrypt_code(code: str) -> str:
     return _cipher.encrypt(code.encode("utf-8")).decode("ascii")
 
@@ -42,6 +45,47 @@ def _decrypt_code(data: str) -> str:
     except (InvalidToken, Exception):
         return data
 
+
+def _hash_token(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def _make_owner_token() -> str:
+    return secrets.token_urlsafe(24)
+
+
+# ── Time helpers ───────────────────────────────────────────────────────────────
+
+def _is_expired(expires_at) -> bool:
+    if not expires_at:
+        return False
+    try:
+        return datetime.utcnow() > datetime.fromisoformat(str(expires_at))
+    except Exception:
+        return False
+
+
+def _max_exec_reached(execution_count: int, max_executions) -> bool:
+    if not max_executions:
+        return False
+    try:
+        me = int(max_executions)
+        return me > 0 and execution_count >= me
+    except Exception:
+        return False
+
+
+def _expiry_from_hours(hours) -> str | None:
+    try:
+        h = float(hours)
+        if h <= 0:
+            return None
+        return (datetime.utcnow() + timedelta(hours=h)).isoformat()
+    except Exception:
+        return None
+
+
+# ── DB ─────────────────────────────────────────────────────────────────────────
 
 def get_db():
     db = getattr(g, "_database", None)
@@ -63,10 +107,14 @@ def init_db():
         db = get_db()
         db.execute("""
             CREATE TABLE IF NOT EXISTS sessions (
-                session_id      TEXT PRIMARY KEY,
-                python_code     TEXT NOT NULL,
-                execution_count INTEGER NOT NULL DEFAULT 0,
-                created_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+                session_id        TEXT PRIMARY KEY,
+                python_code       TEXT NOT NULL,
+                execution_count   INTEGER NOT NULL DEFAULT 0,
+                created_at        TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                owner_token_hash  TEXT,
+                expires_at        TEXT,
+                max_executions    INTEGER DEFAULT 0,
+                label             TEXT DEFAULT ''
             )
         """)
         db.execute("""
@@ -76,6 +124,19 @@ def init_db():
             )
         """)
         db.commit()
+
+        for col, defval in [
+            ("owner_token_hash", "NULL"),
+            ("expires_at",       "NULL"),
+            ("max_executions",   "0"),
+            ("label",            "''"),
+        ]:
+            try:
+                db.execute(f"ALTER TABLE sessions ADD COLUMN {col} TEXT DEFAULT {defval}")
+                db.commit()
+            except Exception:
+                pass
+
         row = db.execute("SELECT value FROM config WHERE key='admin_token'").fetchone()
         if not row:
             token = secrets.token_hex(11)[:21]
@@ -97,6 +158,8 @@ def _get_admin_token():
     return row["value"] if row else None
 
 
+# ── Auth decorators ────────────────────────────────────────────────────────────
+
 def require_admin(f):
     @wraps(f)
     def decorated(*args, **kwargs):
@@ -106,15 +169,23 @@ def require_admin(f):
     return decorated
 
 
+def _is_admin_request() -> bool:
+    if session.get("admin_authed"):
+        return True
+    provided = request.headers.get("X-Admin-Token", "").strip()
+    return bool(provided and provided == _get_admin_token())
+
+
 def require_admin_api(f):
     @wraps(f)
     def decorated(*args, **kwargs):
-        provided = request.headers.get("X-Admin-Token", "").strip()
-        if not provided or provided != _get_admin_token():
-            return jsonify({"error": "Admin authentication required. Provide X-Admin-Token header."}), 403
+        if not _is_admin_request():
+            return jsonify({"error": "Admin authentication required."}), 403
         return f(*args, **kwargs)
     return decorated
 
+
+# ── Misc helpers ───────────────────────────────────────────────────────────────
 
 def generate_session_id():
     while True:
@@ -142,6 +213,14 @@ def _validate_code(code):
     return True, None
 
 
+def _session_status(row) -> str:
+    if _is_expired(row["expires_at"]):
+        return "expired"
+    if _max_exec_reached(row["execution_count"], row["max_executions"]):
+        return "maxed"
+    return "active"
+
+
 # ── Public pages ────────────────────────────────────────────────────────────────
 
 @app.route("/")
@@ -152,7 +231,7 @@ def index():
 # ── Admin auth ─────────────────────────────────────────────────────────────────
 
 @app.route("/admin/login", methods=["GET", "POST"])
-@limiter.limit("10 per minute; 30 per hour", error_message="Too many login attempts. Please wait before trying again.")
+@limiter.limit("10 per minute; 30 per hour", error_message="Too many login attempts.")
 def admin_login():
     if session.get("admin_authed"):
         return redirect(url_for("admin"))
@@ -185,11 +264,27 @@ def admin_logout():
 def admin():
     db = get_db()
     rows = db.execute(
-        "SELECT session_id, execution_count, created_at, LENGTH(python_code) AS code_size "
+        "SELECT session_id, execution_count, created_at, "
+        "LENGTH(python_code) AS encrypted_size, "
+        "expires_at, max_executions, label "
         "FROM sessions ORDER BY created_at DESC"
     ).fetchall()
-    sessions_list = [dict(r) for r in rows]
-    return render_template("admin.html", sessions=sessions_list, admin_token=_get_admin_token())
+    sessions_list = []
+    for r in rows:
+        d = dict(r)
+        d["status"] = _session_status(r)
+        sessions_list.append(d)
+
+    total_expired  = sum(1 for s in sessions_list if s["status"] in ("expired", "maxed"))
+    total_active   = len(sessions_list) - total_expired
+
+    return render_template(
+        "admin.html",
+        sessions=sessions_list,
+        admin_token=_get_admin_token(),
+        total_active=total_active,
+        total_expired=total_expired,
+    )
 
 
 @app.route("/admin/view/<session_id>")
@@ -203,10 +298,40 @@ def admin_view(session_id):
         abort(404)
     data = dict(row)
     data["python_code"] = _decrypt_code(data["python_code"])
+    data["status"]      = _session_status(row)
+    data["line_count"]  = len(data["python_code"].splitlines())
     return render_template("admin_view.html", session=data, admin_token=_get_admin_token())
 
 
 # ── Public API ─────────────────────────────────────────────────────────────────
+
+def _do_save(code: str, expires_in_hours=None, max_executions=0):
+    ok, err = _validate_code(code)
+    if ok is False:
+        return None, None, err
+
+    owner_token      = _make_owner_token()
+    owner_token_hash = _hash_token(owner_token)
+    encrypted        = _encrypt_code(code)
+    session_id       = generate_session_id()
+    expires_at       = _expiry_from_hours(expires_in_hours) if expires_in_hours else None
+
+    try:
+        me = max(0, int(max_executions or 0))
+    except Exception:
+        me = 0
+
+    db = get_db()
+    db.execute(
+        "INSERT INTO sessions "
+        "(session_id, python_code, execution_count, created_at, owner_token_hash, expires_at, max_executions, label) "
+        "VALUES (?, ?, 0, ?, ?, ?, ?, '')",
+        (session_id, encrypted, datetime.utcnow().isoformat(),
+         owner_token_hash, expires_at, me),
+    )
+    db.commit()
+    return session_id, owner_token, None
+
 
 @app.route("/pyv/save", methods=["POST"])
 @limiter.limit("30 per minute; 200 per hour")
@@ -218,8 +343,10 @@ def api_save():
             return jsonify({"error": "No file provided in multipart upload."}), 400
         if not f.filename.endswith(".py"):
             return jsonify({"error": "Only .py files are accepted."}), 400
-        raw = f.read(1_000_000)
+        raw  = f.read(1_000_000)
         code = raw.decode("utf-8", errors="replace")
+        expires_in_hours = request.form.get("expires_in_hours")
+        max_executions   = request.form.get("max_executions", 0)
     elif "application/json" in ct:
         data = request.get_json(silent=True)
         if data is None:
@@ -227,69 +354,79 @@ def api_save():
         code = data.get("code", "")
         if not isinstance(code, str):
             return jsonify({"error": "'code' must be a string."}), 400
+        expires_in_hours = data.get("expires_in_hours")
+        max_executions   = data.get("max_executions", 0)
     else:
         return jsonify({"error": "Content-Type must be application/json or multipart/form-data."}), 415
 
-    ok, err = _validate_code(code)
-    if not ok:
+    sid, owner_token, err = _do_save(code, expires_in_hours, max_executions)
+    if err:
         return jsonify({"error": err}), 400
 
-    encrypted = _encrypt_code(code)
-    session_id = generate_session_id()
-    db = get_db()
-    db.execute(
-        "INSERT INTO sessions (session_id, python_code, execution_count, created_at) VALUES (?, ?, 0, ?)",
-        (session_id, encrypted, datetime.utcnow().isoformat()),
-    )
-    db.commit()
-    return jsonify({"session_id": session_id, "message": "Code saved successfully."}), 201
+    resp = {
+        "session_id":   sid,
+        "owner_token":  owner_token,
+        "message":      "Code saved successfully. Store your owner_token — it will never be shown again.",
+    }
+    if expires_in_hours:
+        resp["expires_at"] = _expiry_from_hours(expires_in_hours)
+    return jsonify(resp), 201
 
 
 @app.route("/pyv/upload", methods=["POST"])
 @limiter.limit("30 per minute; 200 per hour")
 def api_upload():
     if "file" not in request.files:
-        return jsonify({"error": "No file provided. Send a .py file as the 'file' field."}), 400
+        return jsonify({"error": "No file provided."}), 400
     f = request.files["file"]
     if not f.filename or not f.filename.endswith(".py"):
         return jsonify({"error": "Only .py files are accepted."}), 400
-    raw = f.read(1_000_000)
+    raw  = f.read(1_000_000)
     code = raw.decode("utf-8", errors="replace")
 
-    ok, err = _validate_code(code)
-    if not ok:
+    sid, owner_token, err = _do_save(code)
+    if err:
         return jsonify({"error": err}), 400
 
-    encrypted = _encrypt_code(code)
-    session_id = generate_session_id()
-    db = get_db()
-    db.execute(
-        "INSERT INTO sessions (session_id, python_code, execution_count, created_at) VALUES (?, ?, 0, ?)",
-        (session_id, encrypted, datetime.utcnow().isoformat()),
-    )
-    db.commit()
-    return jsonify({"session_id": session_id, "message": "File uploaded successfully."}), 201
+    return jsonify({
+        "session_id":  sid,
+        "owner_token": owner_token,
+        "message":     "File uploaded successfully.",
+    }), 201
 
 
 @app.route("/pyv/get/<session_id>", methods=["GET"])
 @limiter.limit("120 per minute")
 def api_get(session_id):
     if not _validate_sid(session_id):
-        return jsonify({"error": "Invalid session ID. Must be exactly 21 lowercase hex characters."}), 400
+        return jsonify({"error": "Invalid session ID."}), 400
     db = get_db()
     row = db.execute("SELECT * FROM sessions WHERE session_id = ?", (session_id,)).fetchone()
     if not row:
         return jsonify({"error": f"Session '{session_id}' not found."}), 404
+
+    if _is_expired(row["expires_at"]):
+        return jsonify({
+            "error":   "This session has expired and is no longer available.",
+            "expired": True,
+        }), 410
+
+    if _max_exec_reached(row["execution_count"], row["max_executions"]):
+        return jsonify({
+            "error":  f"This session has reached its maximum execution limit of {row['max_executions']}.",
+            "maxed":  True,
+        }), 410
+
     db.execute(
         "UPDATE sessions SET execution_count = execution_count + 1 WHERE session_id = ?",
         (session_id,),
     )
     db.commit()
     return jsonify({
-        "session_id": session_id,
-        "code": row["python_code"],
+        "session_id":      session_id,
+        "code":            row["python_code"],
         "execution_count": row["execution_count"] + 1,
-        "created_at": row["created_at"],
+        "created_at":      row["created_at"],
     })
 
 
@@ -297,20 +434,25 @@ def api_get(session_id):
 @limiter.limit("60 per minute")
 def api_info(session_id):
     if not _validate_sid(session_id):
-        return jsonify({"error": "Invalid session ID. Must be exactly 21 lowercase hex characters."}), 400
+        return jsonify({"error": "Invalid session ID."}), 400
     db = get_db()
     row = db.execute(
-        "SELECT session_id, execution_count, created_at, LENGTH(python_code) AS code_size "
+        "SELECT session_id, execution_count, created_at, LENGTH(python_code) AS encrypted_size, "
+        "expires_at, max_executions "
         "FROM sessions WHERE session_id = ?",
         (session_id,),
     ).fetchone()
     if not row:
         return jsonify({"error": f"Session '{session_id}' not found."}), 404
+
+    status = _session_status(row)
     return jsonify({
-        "session_id": session_id,
+        "session_id":      session_id,
         "execution_count": row["execution_count"],
-        "created_at": row["created_at"],
-        "code_size": row["code_size"],
+        "created_at":      row["created_at"],
+        "expires_at":      row["expires_at"],
+        "max_executions":  row["max_executions"],
+        "status":          status,
     })
 
 
@@ -318,9 +460,65 @@ def api_info(session_id):
 @limiter.limit("30 per minute")
 def api_stats():
     db = get_db()
-    total = db.execute("SELECT COUNT(*) AS cnt FROM sessions").fetchone()["cnt"]
+    total      = db.execute("SELECT COUNT(*) AS cnt FROM sessions").fetchone()["cnt"]
     total_exec = db.execute("SELECT SUM(execution_count) AS s FROM sessions").fetchone()["s"] or 0
     return jsonify({"total_sessions": total, "total_executions": total_exec})
+
+
+# ── Owner self-service API ─────────────────────────────────────────────────────
+
+def _verify_owner(session_id: str):
+    """Returns (row, error_response). error_response is None if auth OK."""
+    provided = request.headers.get("X-Owner-Token", "").strip()
+    if not provided:
+        return None, (jsonify({"error": "X-Owner-Token header is required."}), 403)
+    db = get_db()
+    row = db.execute("SELECT * FROM sessions WHERE session_id = ?", (session_id,)).fetchone()
+    if not row:
+        return None, (jsonify({"error": f"Session '{session_id}' not found."}), 404)
+    if not row["owner_token_hash"]:
+        return None, (jsonify({"error": "This session has no owner token set."}), 403)
+    if _hash_token(provided) != row["owner_token_hash"]:
+        return None, (jsonify({"error": "Invalid owner token."}), 403)
+    return row, None
+
+
+@app.route("/pyv/my/<session_id>", methods=["DELETE"])
+@limiter.limit("20 per minute")
+def api_owner_delete(session_id):
+    if not _validate_sid(session_id):
+        return jsonify({"error": "Invalid session ID."}), 400
+    row, err = _verify_owner(session_id)
+    if err:
+        return err
+    db = get_db()
+    db.execute("DELETE FROM sessions WHERE session_id = ?", (session_id,))
+    db.commit()
+    return jsonify({"message": f"Session '{session_id}' deleted successfully."})
+
+
+@app.route("/pyv/my/<session_id>", methods=["PUT"])
+@limiter.limit("20 per minute")
+def api_owner_edit(session_id):
+    if not _validate_sid(session_id):
+        return jsonify({"error": "Invalid session ID."}), 400
+    row, err = _verify_owner(session_id)
+    if err:
+        return err
+    data = request.get_json(silent=True)
+    if data is None:
+        return jsonify({"error": "Invalid JSON body."}), 400
+    new_code = data.get("code", "")
+    if not isinstance(new_code, str):
+        return jsonify({"error": "'code' must be a string."}), 400
+    ok, verr = _validate_code(new_code)
+    if not ok:
+        return jsonify({"error": verr}), 400
+    encrypted = _encrypt_code(new_code)
+    db = get_db()
+    db.execute("UPDATE sessions SET python_code = ? WHERE session_id = ?", (encrypted, session_id))
+    db.commit()
+    return jsonify({"session_id": session_id, "message": "Code updated successfully."})
 
 
 # ── Admin-only API ─────────────────────────────────────────────────────────────
@@ -331,8 +529,7 @@ def api_edit(session_id):
     if not _validate_sid(session_id):
         return jsonify({"error": "Invalid session ID."}), 400
     db = get_db()
-    row = db.execute("SELECT 1 FROM sessions WHERE session_id = ?", (session_id,)).fetchone()
-    if not row:
+    if not db.execute("SELECT 1 FROM sessions WHERE session_id = ?", (session_id,)).fetchone():
         return jsonify({"error": f"Session '{session_id}' not found."}), 404
     data = request.get_json(silent=True)
     if data is None:
@@ -360,6 +557,75 @@ def api_delete(session_id):
     if result.rowcount == 0:
         return jsonify({"error": "Session not found."}), 404
     return jsonify({"message": "Session deleted successfully."})
+
+
+@app.route("/pyv/admin/set/<session_id>", methods=["PATCH"])
+@require_admin_api
+def api_admin_set(session_id):
+    if not _validate_sid(session_id):
+        return jsonify({"error": "Invalid session ID."}), 400
+    db = get_db()
+    if not db.execute("SELECT 1 FROM sessions WHERE session_id = ?", (session_id,)).fetchone():
+        return jsonify({"error": "Session not found."}), 404
+    data = request.get_json(silent=True) or {}
+
+    updates = []
+    params  = []
+
+    if "label" in data:
+        updates.append("label = ?")
+        params.append(str(data["label"])[:200])
+
+    if "max_executions" in data:
+        try:
+            me = max(0, int(data["max_executions"]))
+        except Exception:
+            me = 0
+        updates.append("max_executions = ?")
+        params.append(me)
+
+    if "expires_at" in data:
+        ea = data["expires_at"]
+        if ea in (None, "", "never"):
+            updates.append("expires_at = NULL")
+        else:
+            updates.append("expires_at = ?")
+            params.append(str(ea))
+
+    if "expires_in_hours" in data:
+        ea = _expiry_from_hours(data["expires_in_hours"])
+        if ea is None:
+            updates.append("expires_at = NULL")
+        else:
+            updates.append("expires_at = ?")
+            params.append(ea)
+
+    if not updates:
+        return jsonify({"error": "No fields to update."}), 400
+
+    params.append(session_id)
+    db.execute(f"UPDATE sessions SET {', '.join(updates)} WHERE session_id = ?", params)
+    db.commit()
+    return jsonify({"session_id": session_id, "message": "Session settings updated."})
+
+
+@app.route("/pyv/admin/cleanup", methods=["POST"])
+@require_admin_api
+def api_admin_cleanup():
+    db    = get_db()
+    now   = datetime.utcnow().isoformat()
+    rows  = db.execute("SELECT session_id, max_executions, execution_count FROM sessions").fetchall()
+    to_delete = []
+    for r in rows:
+        if r["expires_at"] and r["expires_at"] < now:
+            to_delete.append(r["session_id"])
+        elif _max_exec_reached(r["execution_count"], r["max_executions"]):
+            to_delete.append(r["session_id"])
+
+    for sid in to_delete:
+        db.execute("DELETE FROM sessions WHERE session_id = ?", (sid,))
+    db.commit()
+    return jsonify({"deleted": len(to_delete), "message": f"Cleaned up {len(to_delete)} expired/maxed session(s)."})
 
 
 # ── Error handlers ─────────────────────────────────────────────────────────────

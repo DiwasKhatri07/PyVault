@@ -7,6 +7,18 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/static/css/style.css" />
+  <style>
+    .status-badge { display:inline-block; padding:2px 8px; border-radius:4px; font-size:11px; font-weight:600; letter-spacing:0.04em; }
+    .status-active  { background:rgba(61,223,160,0.12); color:#3ddfa0; }
+    .status-expired { background:rgba(255,95,95,0.12);  color:#ff5f5f; }
+    .status-maxed   { background:rgba(255,198,0,0.12);  color:#ffc600; }
+    .expiry-inline { display:flex; gap:6px; align-items:center; }
+    .expiry-input  { background:var(--bg3); border:1px solid var(--border); border-radius:6px; color:var(--text); font-size:12px; padding:3px 7px; width:160px; }
+    .top-actions   { display:flex; gap:0.75rem; align-items:center; flex-wrap:wrap; }
+    .filter-bar    { display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap; }
+    .select-field  { background:var(--bg3); border:1px solid var(--border); border-radius:6px; color:var(--text); font-size:13px; padding:5px 10px; }
+    .label-pill    { display:inline-block; padding:2px 8px; background:rgba(124,77,255,0.15); color:#a78bfa; border-radius:4px; font-size:11px; max-width:120px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  </style>
 </head>
 <body>
   <nav class="navbar">
@@ -17,7 +29,7 @@
     </div>
     <div class="nav-links">
       <a href="/" class="nav-link">Paste</a>
-      <a href="/admin" class="nav-link active">Admin</a>
+      <a href="/admin" class="nav-link active">Sessions</a>
       <a href="/admin/logout" class="nav-link" style="color:var(--red)">Logout</a>
     </div>
   </nav>
@@ -35,18 +47,32 @@
           <span class="stat-label">Total Executions</span>
         </div>
         <div class="stat-card">
-          <span class="stat-value">{{ sessions|length }}</span>
-          <span class="stat-label">Loaded</span>
+          <span class="stat-value" style="color:var(--green)">{{ total_active }}</span>
+          <span class="stat-label">Active</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-value" style="color:var(--red)">{{ total_expired }}</span>
+          <span class="stat-label">Expired / Maxed</span>
         </div>
       </div>
     </div>
 
     {% if sessions %}
     <div class="table-card card">
-      <div class="card-header">
+      <div class="card-header" style="flex-wrap:wrap;gap:0.5rem;">
         <span class="card-title-text">All Sessions</span>
-        <div class="table-controls">
-          <input type="text" id="searchInput" class="input-field input-sm" placeholder="Search session ID…" />
+        <div class="top-actions">
+          <div class="filter-bar">
+            <input type="text" id="searchInput" class="input-field input-sm" placeholder="Search ID or label…" style="width:200px;" />
+            <select id="filterStatus" class="select-field">
+              <option value="">All Status</option>
+              <option value="active">Active</option>
+              <option value="expired">Expired</option>
+              <option value="maxed">Maxed</option>
+            </select>
+          </div>
+          <button class="btn btn-sm btn-danger" id="cleanupBtn">🧹 Cleanup Expired</button>
+          <button class="btn btn-sm btn-outline" id="refreshBtn">↻ Refresh</button>
         </div>
       </div>
       <div class="table-wrapper">
@@ -54,23 +80,37 @@
           <thead>
             <tr>
               <th>Session ID</th>
-              <th>Code Size</th>
+              <th>Label</th>
+              <th>Status</th>
               <th>Executions</th>
-              <th>Created At</th>
+              <th>Expires At</th>
+              <th>Created</th>
               <th>Actions</th>
             </tr>
           </thead>
           <tbody>
             {% for s in sessions %}
-            <tr class="table-row" data-id="{{ s.session_id }}">
+            <tr class="table-row" data-id="{{ s.session_id }}" data-status="{{ s.status }}">
               <td><code class="mono-id">{{ s.session_id }}</code></td>
-              <td>{{ s.code_size }} chars</td>
+              <td>
+                {% if s.label %}
+                  <span class="label-pill" title="{{ s.label }}">{{ s.label }}</span>
+                {% else %}
+                  <span class="muted" style="font-size:12px;">—</span>
+                {% endif %}
+              </td>
+              <td>
+                <span class="status-badge status-{{ s.status }}">{{ s.status.upper() }}</span>
+              </td>
               <td>
                 <span class="exec-badge {% if s.execution_count > 10 %}exec-high{% elif s.execution_count > 0 %}exec-mid{% else %}exec-zero{% endif %}">
-                  {{ s.execution_count }}
+                  {{ s.execution_count }}{% if s.max_executions and s.max_executions > 0 %} / {{ s.max_executions }}{% endif %}
                 </span>
               </td>
-              <td class="muted">{{ s.created_at }}</td>
+              <td class="muted" style="font-size:12px;">
+                {% if s.expires_at %}{{ s.expires_at[:16] }}{% else %}Never{% endif %}
+              </td>
+              <td class="muted" style="font-size:12px;">{{ s.created_at[:16] }}</td>
               <td>
                 <div class="action-btns">
                   <a href="/admin/view/{{ s.session_id }}" class="btn btn-xs btn-outline">View</a>
@@ -97,27 +137,51 @@
 
     fetch('/pyv/stats').then(r => r.json()).then(d => {
       document.getElementById('totalSessions').textContent = d.total_sessions;
-      document.getElementById('totalExec').textContent = d.total_executions;
+      document.getElementById('totalExec').textContent     = d.total_executions;
     });
 
-    document.getElementById('searchInput')?.addEventListener('input', function() {
-      const q = this.value.toLowerCase();
+    function applyFilters() {
+      const q      = document.getElementById('searchInput').value.toLowerCase();
+      const status = document.getElementById('filterStatus').value;
       document.querySelectorAll('#sessionsTable tbody tr').forEach(row => {
-        row.style.display = row.dataset.id.toLowerCase().includes(q) ? '' : 'none';
+        const matchQ = !q || row.dataset.id.includes(q) ||
+                       row.querySelector('.label-pill')?.textContent?.toLowerCase().includes(q);
+        const matchS = !status || row.dataset.status === status;
+        row.style.display = (matchQ && matchS) ? '' : 'none';
       });
+    }
+
+    document.getElementById('searchInput').addEventListener('input', applyFilters);
+    document.getElementById('filterStatus').addEventListener('change', applyFilters);
+
+    document.getElementById('refreshBtn').addEventListener('click', () => location.reload());
+
+    document.getElementById('cleanupBtn').addEventListener('click', () => {
+      if (!confirm('Delete all expired and maxed-out sessions?\n\nThis cannot be undone.')) return;
+      fetch('/pyv/admin/cleanup', {
+        method: 'POST',
+        headers: { 'X-Admin-Token': ADMIN_TOKEN },
+      })
+        .then(r => r.json())
+        .then(d => {
+          alert(d.message || d.error);
+          location.reload();
+        })
+        .catch(() => alert('Network error during cleanup.'));
     });
 
     function deleteSession(id, btn) {
       if (!confirm(`Delete session ${id}?\n\nThis cannot be undone.`)) return;
       fetch(`/pyv/delete/${id}`, {
         method: 'DELETE',
-        headers: { 'X-Admin-Token': ADMIN_TOKEN }
+        headers: { 'X-Admin-Token': ADMIN_TOKEN },
       })
         .then(r => r.json())
         .then(d => {
           if (d.message) {
-            btn.closest('tr').style.opacity = '0.3';
-            setTimeout(() => btn.closest('tr').remove(), 300);
+            const row = btn.closest('tr');
+            row.style.opacity = '0.3';
+            setTimeout(() => row.remove(), 300);
           } else {
             alert('Error: ' + d.error);
           }

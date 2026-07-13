@@ -9,6 +9,54 @@
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css" />
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/dracula.min.css" />
   <link rel="stylesheet" href="/static/css/style.css" />
+  <style>
+    .owner-token-box {
+      background: rgba(255,198,0,0.06);
+      border: 1px solid rgba(255,198,0,0.3);
+      border-radius: 10px;
+      padding: 1rem 1.2rem;
+      margin-top: 1rem;
+    }
+    .owner-token-label {
+      font-size: 11px; font-weight: 700; letter-spacing: 0.06em;
+      color: #ffc600; text-transform: uppercase; margin-bottom: 6px;
+    }
+    .owner-token-warn {
+      font-size: 12px; color: rgba(255,198,0,0.75); margin-bottom: 8px;
+    }
+    .owner-token-row {
+      display: flex; align-items: center; gap: 8px;
+    }
+    .owner-token-code {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 13px; color: #ffc600;
+      background: rgba(255,198,0,0.08);
+      border: 1px solid rgba(255,198,0,0.2);
+      border-radius: 6px; padding: 6px 10px;
+      word-break: break-all; flex: 1;
+      letter-spacing: 0.03em;
+    }
+    .expiry-row {
+      display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;
+    }
+    .expiry-select {
+      background: var(--bg3); border: 1px solid var(--border);
+      border-radius: 8px; color: var(--text); font-size: 13px;
+      padding: 6px 12px; flex: 1; min-width: 180px;
+    }
+    .manage-card { margin-top: 1.5rem; }
+    .manage-tabs { display: flex; gap: 0; border-bottom: 1px solid var(--border); margin-bottom: 1rem; }
+    .manage-tab {
+      padding: 8px 16px; font-size: 13px; color: var(--text3);
+      cursor: pointer; border-bottom: 2px solid transparent; transition: all 0.15s;
+    }
+    .manage-tab.active { color: var(--text); border-bottom-color: var(--accent); }
+    .manage-panel { display: none; }
+    .manage-panel.active { display: block; }
+    .form-row { display: flex; gap: 0.5rem; align-items: flex-end; flex-wrap: wrap; }
+    .form-group { display: flex; flex-direction: column; gap: 4px; }
+    .form-label { font-size: 11px; color: var(--text3); text-transform: uppercase; letter-spacing: 0.05em; }
+  </style>
 </head>
 <body>
   <nav class="navbar">
@@ -25,7 +73,7 @@
   <main class="main-container">
     <div class="hero">
       <h1 class="hero-title">Remote Code Hosting</h1>
-      <p class="hero-sub">Upload Python scripts, get a secure Session ID, execute remotely — source never exposed.</p>
+      <p class="hero-sub">Upload Python scripts, get a secure Session ID, execute remotely — source encrypted and never exposed.</p>
     </div>
 
     <div class="card editor-card">
@@ -37,7 +85,7 @@
           <span class="editor-label">Python Editor</span>
         </div>
         <div class="editor-actions">
-          <span class="char-counter" id="charCounter">0 / 10,000</span>
+          <span class="char-counter" id="charCounter">0 / 10,000 lines</span>
           <button class="btn btn-ghost btn-sm" id="clearBtn">Clear</button>
           <button class="btn btn-ghost btn-sm" id="formatBtn">Format</button>
         </div>
@@ -56,7 +104,24 @@
         <input type="file" id="fileUpload" accept=".py" style="display:none" />
         <span id="uploadName" class="upload-filename"></span>
       </div>
-      <div class="btn-group">
+      <div class="expiry-row">
+        <div class="form-group">
+          <span class="form-label">Auto-expire after</span>
+          <select class="expiry-select" id="expirySelect">
+            <option value="">Never</option>
+            <option value="1">1 hour</option>
+            <option value="6">6 hours</option>
+            <option value="24">24 hours</option>
+            <option value="72">3 days</option>
+            <option value="168">7 days</option>
+            <option value="720">30 days</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <span class="form-label">Max executions (0 = ∞)</span>
+          <input type="number" id="maxExecInput" min="0" value="0"
+            style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;padding:6px 10px;width:100px;" />
+        </div>
         <button class="btn btn-primary" id="saveBtn">
           <span class="btn-icon">↑</span> Save & Get Session ID
         </button>
@@ -72,21 +137,35 @@
         <span class="session-label">Session ID</span>
         <div class="session-id-row">
           <code class="session-id-code" id="sessionIdText"></code>
-          <button class="btn btn-icon-only" id="copyBtn" title="Copy to clipboard">
+          <button class="btn btn-icon-only" id="copyBtn" title="Copy Session ID">
             <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
               <rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
             </svg>
           </button>
         </div>
       </div>
-      <div class="result-meta">
+
+      <div class="owner-token-box" id="ownerTokenBox" style="display:none">
+        <div class="owner-token-label">⚠ Owner Token — Save This Now!</div>
+        <div class="owner-token-warn">This token lets you delete or edit your session. It will <strong>never be shown again</strong>.</div>
+        <div class="owner-token-row">
+          <code class="owner-token-code" id="ownerTokenText"></code>
+          <button class="btn btn-icon-only" id="copyTokenBtn" title="Copy owner token" style="border-color:rgba(255,198,0,0.4);color:#ffc600;">
+            <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <div class="result-meta" style="margin-top:0.75rem;">
         <div class="meta-item">
-          <span class="meta-label">Character Length</span>
+          <span class="meta-label">Lines</span>
           <span class="meta-value" id="codeLength">—</span>
         </div>
         <div class="meta-item">
-          <span class="meta-label">Hex Characters</span>
-          <span class="meta-value">21</span>
+          <span class="meta-label">Expires</span>
+          <span class="meta-value" id="expiresDisplay">Never</span>
         </div>
       </div>
       <div class="usage-block">
@@ -110,10 +189,66 @@
       </div>
       <div id="lookupResult" class="lookup-result" style="display:none"></div>
     </div>
+
+    <!-- Manage My Session -->
+    <div class="manage-card card">
+      <div class="card-header">
+        <span class="card-title-text">Manage My Session</span>
+      </div>
+      <div style="padding:1rem;">
+        <p style="font-size:13px;color:var(--text3);margin:0 0 1rem 0;">
+          Use your <strong>owner token</strong> to delete or update the code in your session. Only you have this token.
+        </p>
+        <div class="manage-tabs">
+          <div class="manage-tab active" data-panel="deletePanel">Delete Session</div>
+          <div class="manage-tab" data-panel="editPanel">Update Code</div>
+        </div>
+
+        <div class="manage-panel active" id="deletePanel">
+          <div class="form-row" style="gap:0.75rem;">
+            <div class="form-group" style="flex:1;min-width:180px;">
+              <span class="form-label">Session ID</span>
+              <input type="text" id="myDeleteSid" class="input-field input-sm" placeholder="21-char session ID" maxlength="21" />
+            </div>
+            <div class="form-group" style="flex:1;min-width:200px;">
+              <span class="form-label">Owner Token</span>
+              <input type="text" id="myDeleteToken" class="input-field input-sm" placeholder="Your owner token" />
+            </div>
+            <div class="form-group" style="justify-content:flex-end;">
+              <button class="btn btn-danger btn-sm" id="myDeleteBtn">Delete My Session</button>
+            </div>
+          </div>
+          <p id="deleteStatus" style="font-size:12px;margin-top:0.5rem;"></p>
+        </div>
+
+        <div class="manage-panel" id="editPanel">
+          <p style="font-size:12px;color:var(--text3);margin:0 0 0.75rem 0;">
+            Paste the new code below. This replaces the code stored in the session (it stays encrypted on the server).
+          </p>
+          <div class="form-row" style="gap:0.75rem;margin-bottom:0.75rem;">
+            <div class="form-group" style="flex:1;min-width:180px;">
+              <span class="form-label">Session ID</span>
+              <input type="text" id="myEditSid" class="input-field input-sm" placeholder="21-char session ID" maxlength="21" />
+            </div>
+            <div class="form-group" style="flex:1;min-width:200px;">
+              <span class="form-label">Owner Token</span>
+              <input type="text" id="myEditToken" class="input-field input-sm" placeholder="Your owner token" />
+            </div>
+          </div>
+          <textarea id="myEditCode" class="input-field"
+            style="width:100%;min-height:120px;font-family:'JetBrains Mono',monospace;font-size:13px;resize:vertical;"
+            placeholder="# New Python code…"></textarea>
+          <div style="display:flex;gap:0.75rem;margin-top:0.5rem;align-items:center;">
+            <button class="btn btn-primary btn-sm" id="myEditBtn">Update Code</button>
+            <p id="editStatus2" style="font-size:12px;margin:0;"></p>
+          </div>
+        </div>
+      </div>
+    </div>
   </main>
 
   <footer class="footer">
-    <p>PyVault — Secure Remote Code Hosting &nbsp;·&nbsp; Source never exposed to client</p>
+    <p>PyVault — Secure Remote Code Hosting &nbsp;·&nbsp; Code encrypted at rest &amp; in transit</p>
   </footer>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>

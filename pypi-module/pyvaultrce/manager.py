@@ -147,8 +147,14 @@ def _localhost_hint(url: str) -> str:
     return ""
 
 
-def _upload_code(code: str, base_url: Optional[str], timeout: int) -> str:
-    """Internal: push code string to /pyv/save and return the session ID."""
+def _upload_code(
+    code: str,
+    base_url: Optional[str],
+    timeout: int,
+    expires_in_hours: Optional[float] = None,
+    max_executions: int = 0,
+) -> tuple:
+    """Internal: push code string to /pyv/save. Returns (session_id, owner_token)."""
     if not code.strip():
         raise ValueError("Code is empty — nothing to upload.")
     line_count = len(code.splitlines())
@@ -156,19 +162,26 @@ def _upload_code(code: str, base_url: Optional[str], timeout: int) -> str:
         raise ValueError(
             f"Code is {line_count:,} lines, which exceeds the server limit of {_MAX_LINES:,} lines."
         )
+    payload = {"code": code}
+    if expires_in_hours and expires_in_hours > 0:
+        payload["expires_in_hours"] = expires_in_hours
+    if max_executions and max_executions > 0:
+        payload["max_executions"] = max_executions
+
     url  = _base(base_url) + "/pyv/save"
-    resp = _http_post(url, {"code": code}, timeout)
+    resp = _http_post(url, payload, timeout)
     if resp.status_code != 201:
         try:
             err = resp.json().get("error", resp.text)
         except Exception:
             err = resp.text
         raise RuntimeError(f"Server rejected upload (HTTP {resp.status_code}): {err}")
-    data = resp.json()
-    sid  = data.get("session_id", "")
+    data        = resp.json()
+    sid         = data.get("session_id", "")
+    owner_token = data.get("owner_token", "")
     if not _valid_sid(sid):
         raise RuntimeError(f"Server returned unexpected Session ID: '{sid}'")
-    return sid
+    return sid, owner_token
 
 
 # ── CodeManager ───────────────────────────────────────────────────────────────
@@ -195,14 +208,18 @@ class CodeManager:
         file_path: str,
         base_url: Optional[str] = None,
         timeout: int = 30,
+        expires_in_hours: Optional[float] = None,
+        max_executions: int = 0,
     ) -> str:
         """
         Read a local .py file and upload it to PyVault.
 
         Args:
-            file_path: Path to the local Python file.
-            base_url:  Override the server URL.
-            timeout:   HTTP timeout in seconds.
+            file_path:        Path to the local Python file.
+            base_url:         Override the server URL.
+            timeout:          HTTP timeout in seconds.
+            expires_in_hours: Optional auto-expiry in hours from now.
+            max_executions:   Max times the session can be executed (0 = unlimited).
 
         Returns:
             The 21-character hex Session ID.
@@ -213,10 +230,14 @@ class CodeManager:
         code = _read_file(file_path)
         if not code.strip():
             raise ValueError(f"The file '{file_path}' is empty — nothing to upload.")
-        sid = _upload_code(code, base_url, timeout)
+        sid, owner_token = _upload_code(code, base_url, timeout, expires_in_hours, max_executions)
         print(f"[PyVault] ✓ Uploaded  — Session ID : {sid}", flush=True)
         print(f"[PyVault]   Source    : {os.path.abspath(file_path)}", flush=True)
         print(f"[PyVault]   Lines     : {len(code.splitlines()):,}", flush=True)
+        if owner_token:
+            print(f"\n[PyVault] ⚠ OWNER TOKEN (save this — shown only once!):", flush=True)
+            print(f"[PyVault]   {owner_token}", flush=True)
+            print(f"[PyVault]   Use this to delete or edit your session later.\n", flush=True)
         return sid
 
     @staticmethod
@@ -265,10 +286,14 @@ class CodeManager:
         if not code.strip():
             raise ValueError("Downloaded content is empty.")
 
-        sid = _upload_code(code, base_url, timeout)
+        sid, owner_token = _upload_code(code, base_url, timeout)
         print(f"[PyVault] ✓ Uploaded from URL — Session ID : {sid}", flush=True)
         print(f"[PyVault]   Source : {paste_url}", flush=True)
         print(f"[PyVault]   Lines  : {len(code.splitlines()):,}", flush=True)
+        if owner_token:
+            print(f"\n[PyVault] ⚠ OWNER TOKEN (save this — shown only once!):", flush=True)
+            print(f"[PyVault]   {owner_token}", flush=True)
+            print(f"[PyVault]   Use this to delete or edit your session later.\n", flush=True)
         return sid
 
     @staticmethod
@@ -306,9 +331,22 @@ class CodeManager:
                 err = resp.json().get("error", "Session not found.")
             except Exception:
                 err = "Session not found."
-            raise RuntimeError(
-                f"Session '{session_id}' not found on the server. {err}"
-            )
+            raise RuntimeError(f"Session '{session_id}' not found on the server. {err}")
+
+        if resp.status_code == 410:
+            try:
+                d   = resp.json()
+                err = d.get("error", "Session is no longer available.")
+                if d.get("expired"):
+                    raise RuntimeError(f"Session '{session_id}' has expired. {err}")
+                if d.get("maxed"):
+                    raise RuntimeError(f"Session '{session_id}' has reached its execution limit. {err}")
+            except RuntimeError:
+                raise
+            except Exception:
+                pass
+            raise RuntimeError(f"Session '{session_id}' is no longer available (HTTP 410).")
+
         if resp.status_code != 200:
             try:
                 err = resp.json().get("error", resp.text)
@@ -417,45 +455,32 @@ class CodeManager:
         return False
 
     @staticmethod
-    def edit(
+    def delete(
         session_id: str,
-        file_path: str,
-        admin_token: str,
+        owner_token: str,
         base_url: Optional[str] = None,
         timeout: int = 30,
     ) -> None:
         """
-        Replace the code stored for a Session ID (admin-only operation).
-
-        Requires the admin access token from the PyVault server.
+        Delete your own session using the owner token received when it was created.
 
         Args:
-            session_id:  The 21-character hex Session ID to update.
-            file_path:   Path to the .py file with the new code.
-            admin_token: Admin access token (from server console on first start).
+            session_id:  The 21-character hex Session ID.
+            owner_token: The owner token printed when the session was first uploaded.
             base_url:    Override the server URL.
             timeout:     HTTP timeout in seconds.
 
         Raises:
-            ValueError, FileNotFoundError, ConnectionError, RuntimeError
+            ValueError, ConnectionError, RuntimeError
         """
         _check_sid(session_id)
-        if not admin_token or not admin_token.strip():
-            raise ValueError("admin_token is required. Check the server console for your token.")
-
-        code = _read_file(file_path)
-        if not code.strip():
-            raise ValueError(f"The file '{file_path}' is empty — nothing to upload.")
-        line_count = len(code.splitlines())
-        if line_count > _MAX_LINES:
-            raise ValueError(f"Code is {line_count:,} lines, exceeds {_MAX_LINES:,} line limit.")
-
-        url = _base(base_url) + f"/pyv/edit/{session_id}"
+        if not owner_token or not owner_token.strip():
+            raise ValueError("owner_token is required.")
+        url = _base(base_url) + f"/pyv/my/{session_id}"
         try:
-            resp = requests.put(
+            resp = requests.delete(
                 url,
-                json={"code": code},
-                headers={"X-Admin-Token": admin_token},
+                headers={"X-Owner-Token": owner_token.strip()},
                 timeout=timeout,
             )
         except requests.exceptions.ConnectionError:
@@ -466,7 +491,71 @@ class CodeManager:
             raise ConnectionError(f"HTTP request failed: {exc}") from exc
 
         if resp.status_code == 403:
-            raise RuntimeError("Admin token rejected. Check your token and try again.")
+            raise RuntimeError("Owner token rejected — check the token and try again.")
+        if resp.status_code == 404:
+            raise RuntimeError(f"Session '{session_id}' not found.")
+        if resp.status_code != 200:
+            try:
+                err = resp.json().get("error", resp.text)
+            except Exception:
+                err = resp.text
+            raise RuntimeError(f"Server error (HTTP {resp.status_code}): {err}")
+        print(f"[PyVault] ✓ Session '{session_id}' deleted.", flush=True)
+
+    @staticmethod
+    def edit(
+        session_id: str,
+        file_path: str,
+        admin_token: str = "",
+        owner_token: str = "",
+        base_url: Optional[str] = None,
+        timeout: int = 30,
+    ) -> None:
+        """
+        Replace the code stored for a Session ID.
+
+        Provide either admin_token (admin access) or owner_token (creator access).
+
+        Args:
+            session_id:  The 21-character hex Session ID to update.
+            file_path:   Path to the .py file with the new code.
+            admin_token: Admin access token (from server console on first start).
+            owner_token: Owner token printed when the session was first created.
+            base_url:    Override the server URL.
+            timeout:     HTTP timeout in seconds.
+
+        Raises:
+            ValueError, FileNotFoundError, ConnectionError, RuntimeError
+        """
+        _check_sid(session_id)
+        if not admin_token.strip() and not owner_token.strip():
+            raise ValueError("Provide admin_token or owner_token.")
+
+        code = _read_file(file_path)
+        if not code.strip():
+            raise ValueError(f"The file '{file_path}' is empty — nothing to upload.")
+        line_count = len(code.splitlines())
+        if line_count > _MAX_LINES:
+            raise ValueError(f"Code is {line_count:,} lines, exceeds {_MAX_LINES:,} line limit.")
+
+        if owner_token.strip():
+            url     = _base(base_url) + f"/pyv/my/{session_id}"
+            headers = {"Content-Type": "application/json", "X-Owner-Token": owner_token.strip()}
+        else:
+            url     = _base(base_url) + f"/pyv/edit/{session_id}"
+            headers = {"Content-Type": "application/json", "X-Admin-Token": admin_token.strip()}
+
+        try:
+            resp = requests.put(url, json={"code": code}, headers=headers, timeout=timeout)
+        except requests.exceptions.ConnectionError:
+            raise ConnectionError(f"Unable to connect to PyVault at '{url}'.")
+        except requests.exceptions.Timeout:
+            raise TimeoutError(f"Request timed out after {timeout}s.")
+        except requests.exceptions.RequestException as exc:
+            raise ConnectionError(f"HTTP request failed: {exc}") from exc
+
+        if resp.status_code == 403:
+            raise RuntimeError("Token rejected. Check your admin_token or owner_token.")
         if resp.status_code == 404:
             raise RuntimeError(f"Session '{session_id}' not found.")
         if resp.status_code != 200:

@@ -1,6 +1,6 @@
 Metadata-Version: 2.4
 Name: PyVaultRCE
-Version: 2.1.0
+Version: 2.2.0
 Summary: Remote Code Execution & Hosting client for PyVault — source never exposed
 Author: PyVault
 Keywords: remote execution code hosting vault rce session

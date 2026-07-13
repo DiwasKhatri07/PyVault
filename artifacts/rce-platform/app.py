@@ -10,6 +10,7 @@ from flask import (
 )
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
+from cryptography.fernet import Fernet, InvalidToken
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SESSION_SECRET", secrets.token_hex(32))
@@ -23,6 +24,23 @@ limiter = Limiter(
 
 DATABASE = os.path.join(os.path.dirname(__file__), "sessions.db")
 MAX_CODE_LINES = 10_000
+
+_CIPHER_KEY = os.environ.get(
+    "PYVAULT_CIPHER_KEY",
+    "aK3vytd8SaduKCt6D8-yL-DA2pDNOGiNLfZhnBPJebo="
+).encode()
+_cipher = Fernet(_CIPHER_KEY)
+
+
+def _encrypt_code(code: str) -> str:
+    return _cipher.encrypt(code.encode("utf-8")).decode("ascii")
+
+
+def _decrypt_code(data: str) -> str:
+    try:
+        return _cipher.decrypt(data.encode("ascii")).decode("utf-8")
+    except (InvalidToken, Exception):
+        return data
 
 
 def get_db():
@@ -116,7 +134,6 @@ def _validate_sid(session_id):
 
 
 def _validate_code(code):
-    """Return (ok, error_message). Checks empty, line count."""
     if not code or not code.strip():
         return False, "No Python code provided."
     lines = code.splitlines()
@@ -132,7 +149,7 @@ def index():
     return render_template("index.html")
 
 
-# ── Admin auth (rate-limited) ──────────────────────────────────────────────────
+# ── Admin auth ─────────────────────────────────────────────────────────────────
 
 @app.route("/admin/login", methods=["GET", "POST"])
 @limiter.limit("10 per minute; 30 per hour", error_message="Too many login attempts. Please wait before trying again.")
@@ -184,17 +201,16 @@ def admin_view(session_id):
     row = db.execute("SELECT * FROM sessions WHERE session_id = ?", (session_id,)).fetchone()
     if not row:
         abort(404)
-    return render_template("admin_view.html", session=dict(row), admin_token=_get_admin_token())
+    data = dict(row)
+    data["python_code"] = _decrypt_code(data["python_code"])
+    return render_template("admin_view.html", session=data, admin_token=_get_admin_token())
 
 
-# ── Public API (rate-limited) ──────────────────────────────────────────────────
+# ── Public API ─────────────────────────────────────────────────────────────────
 
 @app.route("/pyv/save", methods=["POST"])
 @limiter.limit("30 per minute; 200 per hour")
 def api_save():
-    code = ""
-
-    # Validate Content-Type
     ct = request.content_type or ""
     if "multipart" in ct:
         f = request.files.get("file")
@@ -218,11 +234,12 @@ def api_save():
     if not ok:
         return jsonify({"error": err}), 400
 
+    encrypted = _encrypt_code(code)
     session_id = generate_session_id()
     db = get_db()
     db.execute(
         "INSERT INTO sessions (session_id, python_code, execution_count, created_at) VALUES (?, ?, 0, ?)",
-        (session_id, code, datetime.utcnow().isoformat()),
+        (session_id, encrypted, datetime.utcnow().isoformat()),
     )
     db.commit()
     return jsonify({"session_id": session_id, "message": "Code saved successfully."}), 201
@@ -243,11 +260,12 @@ def api_upload():
     if not ok:
         return jsonify({"error": err}), 400
 
+    encrypted = _encrypt_code(code)
     session_id = generate_session_id()
     db = get_db()
     db.execute(
         "INSERT INTO sessions (session_id, python_code, execution_count, created_at) VALUES (?, ?, 0, ?)",
-        (session_id, code, datetime.utcnow().isoformat()),
+        (session_id, encrypted, datetime.utcnow().isoformat()),
     )
     db.commit()
     return jsonify({"session_id": session_id, "message": "File uploaded successfully."}), 201
@@ -325,7 +343,8 @@ def api_edit(session_id):
     ok, err = _validate_code(new_code)
     if not ok:
         return jsonify({"error": err}), 400
-    db.execute("UPDATE sessions SET python_code = ? WHERE session_id = ?", (new_code, session_id))
+    encrypted = _encrypt_code(new_code)
+    db.execute("UPDATE sessions SET python_code = ? WHERE session_id = ?", (encrypted, session_id))
     db.commit()
     return jsonify({"session_id": session_id, "message": "Code updated successfully."})
 
@@ -343,7 +362,7 @@ def api_delete(session_id):
     return jsonify({"message": "Session deleted successfully."})
 
 
-# ── Rate limit error handler ───────────────────────────────────────────────────
+# ── Error handlers ─────────────────────────────────────────────────────────────
 
 @app.errorhandler(429)
 def ratelimit_error(e):

@@ -15,12 +15,36 @@ except ImportError:
         "The 'requests' library is required. Install it with: pip install requests"
     )
 
-_DEFAULT_BASE = os.environ.get("PYVAULT_URL", "http://localhost:5000")
-_MAX_LINES    = 10_000
-_SID_LEN      = 21
-_HEX_SET      = frozenset("0123456789abcdef")
+try:
+    from cryptography.fernet import Fernet, InvalidToken as _InvalidToken
+    _CIPHER_KEY = b"aK3vytd8SaduKCt6D8-yL-DA2pDNOGiNLfZhnBPJebo="
+    _cipher     = Fernet(_CIPHER_KEY)
+    _HAS_CRYPTO = True
+except ImportError:
+    _HAS_CRYPTO = False
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
+_DEFAULT_BASE = os.environ.get(
+    "PYVAULT_URL",
+    "https://secure-code-runner--diwasreplit.replit.app"
+)
+_MAX_LINES = 10_000
+_SID_LEN   = 21
+_HEX_SET   = frozenset("0123456789abcdef")
+
+
+# ── Encryption helpers ─────────────────────────────────────────────────────────
+
+def _decrypt(data: str) -> str:
+    """Decrypt a Fernet-encrypted payload. Falls back to plaintext on failure."""
+    if not _HAS_CRYPTO:
+        return data
+    try:
+        return _cipher.decrypt(data.encode("ascii")).decode("utf-8")
+    except (_InvalidToken, Exception):
+        return data
+
+
+# ── HTTP helpers ───────────────────────────────────────────────────────────────
 
 def _base(url: Optional[str]) -> str:
     return (url or _DEFAULT_BASE).rstrip("/")
@@ -58,25 +82,21 @@ def _resolve_paste_url(url: str) -> str:
     Supports pastebin.com, hastebin.com, dpaste.com, paste.ofcode.org,
     GitHub Gist raw URLs, and any URL already pointing to raw text.
     """
-    # pastebin.com/XXXX → pastebin.com/raw/XXXX
     url = re.sub(
         r"(https?://pastebin\.com/)(?!raw/)([A-Za-z0-9]+)(\?.*)?$",
         r"\1raw/\2",
         url,
     )
-    # hastebin.com/XXXX → hastebin.com/raw/XXXX
     url = re.sub(
         r"(https?://hastebin\.com/)(?!raw/)([A-Za-z0-9]+)(\?.*)?$",
         r"\1raw/\2",
         url,
     )
-    # dpaste.com/XXXX → dpaste.com/XXXX.txt
     url = re.sub(
         r"(https?://dpaste\.com/)([A-Z0-9]+)(?!\.txt)(\?.*)?$",
         r"\1\2.txt",
         url,
     )
-    # paste.ofcode.org/XXXX → paste.ofcode.org/raw/XXXX
     url = re.sub(
         r"(https?://paste\.ofcode\.org/)(?!raw/)([A-Za-z0-9]+)(\?.*)?$",
         r"\1raw/\2",
@@ -89,9 +109,9 @@ def _http_post(url: str, payload: dict, timeout: int) -> requests.Response:
     try:
         return requests.post(url, json=payload, timeout=timeout)
     except requests.exceptions.ConnectionError:
+        _hint = _localhost_hint(url)
         raise ConnectionError(
-            f"Unable to connect to PyVault at '{url}'. "
-            "Ensure the server is running and PYVAULT_URL is set correctly."
+            f"Unable to connect to PyVault at '{url}'.{_hint}"
         )
     except requests.exceptions.Timeout:
         raise TimeoutError(f"Request to '{url}' timed out after {timeout}s.")
@@ -103,17 +123,7 @@ def _http_get(url: str, timeout: int, headers: Optional[dict] = None) -> request
     try:
         return requests.get(url, timeout=timeout, headers=headers or {})
     except requests.exceptions.ConnectionError:
-        _hint = ""
-        if "localhost" in url or "127.0.0.1" in url:
-            _hint = (
-                "\n\n  ✗ PYVAULT_URL is not set — defaulting to localhost will not work "
-                "on a phone or remote machine.\n"
-                "  → Set it before running:\n"
-                "       import os\n"
-                "       os.environ['PYVAULT_URL'] = 'https://your-server.replit.app'\n"
-                "    or in your shell:\n"
-                "       export PYVAULT_URL=https://your-server.replit.app"
-            )
+        _hint = _localhost_hint(url)
         raise ConnectionError(
             f"Unable to connect to PyVault at '{url}'.{_hint}"
         )
@@ -123,13 +133,28 @@ def _http_get(url: str, timeout: int, headers: Optional[dict] = None) -> request
         raise ConnectionError(f"HTTP request failed: {exc}") from exc
 
 
+def _localhost_hint(url: str) -> str:
+    if "localhost" in url or "127.0.0.1" in url:
+        return (
+            "\n\n  ✗ PYVAULT_URL is not set — defaulting to localhost will not work "
+            "on a phone or remote machine.\n"
+            "  → Set it before running:\n"
+            "       import os\n"
+            "       os.environ['PYVAULT_URL'] = 'https://secure-code-runner--diwasreplit.replit.app'\n"
+            "    or in your shell:\n"
+            "       export PYVAULT_URL=https://secure-code-runner--diwasreplit.replit.app"
+        )
+    return ""
+
+
 def _upload_code(code: str, base_url: Optional[str], timeout: int) -> str:
     """Internal: push code string to /pyv/save and return the session ID."""
     if not code.strip():
         raise ValueError("Code is empty — nothing to upload.")
-    if len(code) > _MAX_CHARS:
+    line_count = len(code.splitlines())
+    if line_count > _MAX_LINES:
         raise ValueError(
-            f"Code is {len(code):,} characters, which exceeds the server limit of {_MAX_CHARS:,}."
+            f"Code is {line_count:,} lines, which exceeds the server limit of {_MAX_LINES:,} lines."
         )
     url  = _base(base_url) + "/pyv/save"
     resp = _http_post(url, {"code": code}, timeout)
@@ -161,7 +186,8 @@ class CodeManager:
         CodeManager.run(sid)
 
     Environment variables:
-        PYVAULT_URL — base URL of the PyVault server (default: http://localhost:5000)
+        PYVAULT_URL — base URL of the PyVault server
+                      (default: https://secure-code-runner--diwasreplit.replit.app)
     """
 
     @staticmethod
@@ -190,7 +216,7 @@ class CodeManager:
         sid = _upload_code(code, base_url, timeout)
         print(f"[PyVault] ✓ Uploaded  — Session ID : {sid}", flush=True)
         print(f"[PyVault]   Source    : {os.path.abspath(file_path)}", flush=True)
-        print(f"[PyVault]   Size      : {len(code):,} chars", flush=True)
+        print(f"[PyVault]   Lines     : {len(code.splitlines()):,}", flush=True)
         return sid
 
     @staticmethod
@@ -221,7 +247,7 @@ class CodeManager:
             resp = requests.get(
                 raw_url,
                 timeout=timeout,
-                headers={"User-Agent": "PyVaultRCE/2.0"},
+                headers={"User-Agent": "PyVaultRCE/2.1"},
             )
             resp.raise_for_status()
         except requests.exceptions.ConnectionError:
@@ -242,7 +268,7 @@ class CodeManager:
         sid = _upload_code(code, base_url, timeout)
         print(f"[PyVault] ✓ Uploaded from URL — Session ID : {sid}", flush=True)
         print(f"[PyVault]   Source : {paste_url}", flush=True)
-        print(f"[PyVault]   Size   : {len(code):,} chars", flush=True)
+        print(f"[PyVault]   Lines  : {len(code.splitlines()):,}", flush=True)
         return sid
 
     @staticmethod
@@ -253,10 +279,11 @@ class CodeManager:
         _ns: Optional[dict] = None,
     ) -> None:
         """
-        Fetch the code for a Session ID from PyVault and execute it locally.
+        Fetch the encrypted code for a Session ID from PyVault, decrypt it,
+        and execute it locally.
 
-        The source code is transmitted over the network and run via exec().
-        It is never written to disk and is not accessible after execution.
+        The source code is transmitted encrypted, decrypted in-memory, never
+        written to disk, and is not accessible after execution.
 
         Args:
             session_id: The 21-character hex Session ID.
@@ -290,11 +317,16 @@ class CodeManager:
             raise RuntimeError(f"Server error (HTTP {resp.status_code}): {err}")
 
         data      = resp.json()
-        code      = data.get("code", "")
+        encrypted = data.get("code", "")
         run_count = data.get("execution_count", "?")
 
-        if not code:
-            raise RuntimeError(f"Server returned empty code for session '{session_id}'.")
+        if not encrypted:
+            raise RuntimeError(f"Server returned empty payload for session '{session_id}'.")
+
+        code = _decrypt(encrypted)
+
+        if not code.strip():
+            raise RuntimeError(f"Decrypted code is empty for session '{session_id}'.")
 
         print(f"[PyVault] ▶ Running session '{session_id}' (execution #{run_count})…", flush=True)
 
@@ -351,7 +383,7 @@ class CodeManager:
             f"[PyVault] ℹ Session   : {data['session_id']}\n"
             f"[PyVault]   Executions: {data['execution_count']}\n"
             f"[PyVault]   Created   : {data['created_at']}\n"
-            f"[PyVault]   Code size : {data['code_size']:,} chars",
+            f"[PyVault]   Code size : {data['code_size']:,} bytes (encrypted)",
             flush=True,
         )
         return data
@@ -414,8 +446,9 @@ class CodeManager:
         code = _read_file(file_path)
         if not code.strip():
             raise ValueError(f"The file '{file_path}' is empty — nothing to upload.")
-        if len(code) > _MAX_CHARS:
-            raise ValueError(f"Code is {len(code):,} chars, exceeds {_MAX_CHARS:,} limit.")
+        line_count = len(code.splitlines())
+        if line_count > _MAX_LINES:
+            raise ValueError(f"Code is {line_count:,} lines, exceeds {_MAX_LINES:,} line limit.")
 
         url = _base(base_url) + f"/pyv/edit/{session_id}"
         try:
@@ -444,5 +477,5 @@ class CodeManager:
             raise RuntimeError(f"Server rejected edit (HTTP {resp.status_code}): {err}")
 
         print(f"[PyVault] ✓ Session '{session_id}' updated.", flush=True)
-        print(f"[PyVault]   File : {os.path.abspath(file_path)}", flush=True)
-        print(f"[PyVault]   Size : {len(code):,} chars", flush=True)
+        print(f"[PyVault]   File  : {os.path.abspath(file_path)}", flush=True)
+        print(f"[PyVault]   Lines : {line_count:,}", flush=True)

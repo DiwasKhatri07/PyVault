@@ -1,1 +1,2 @@
 - [PyVault runtime reliability](pyvault-runtime.md) — Production imports must initialize storage safely, and legacy SQLite values need boundary normalization.
+- [PyVault sharing boundary](pyvault-sharing.md) — Short public links expose session metadata and declared libraries only; source stays private and dependencies are never auto-installed.

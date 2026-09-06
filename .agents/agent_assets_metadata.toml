@@ -14,3 +14,17 @@ mtime_ms = 1788694247477
 storage_uri = "gcs://replit-rams-assets-sisko/rams/assets/repl:09864666-d33b-4834-8075-80bacc107acf/e9a95f64-25b1-4d8f-9e7c-e0e0fddfd368/88379803-d738-422e-b0a9-f95a8f4e6e83"
 storage_version_token = "1788694265437948"
 content_type = "application/octet-stream"
+
+[[outputs]]
+id = "t3sqhgOnp25icpqTLXgWQ"
+uri = "file://release/PyVaultRCE-2.4.0.zip"
+type = "unspecified"
+title = "PyVaultRCE 2.4.0 — Complete ZIP"
+description = "Updated Flask app, short-link sharing, library metadata, private admin route, hosting presets, database, and published PyVaultRCE 2.4.0 package source/artifacts."
+logical_id = "a5dfd437-dba5-4952-9a83-930c05d73c5a"
+content_hash = "sha256:008f203b1e4ea47045fd971a80528d89d15bf63c88a0735085fb4dff19af107b"
+size = 170094
+mtime_ms = 1788695081799
+storage_uri = "gcs://replit-rams-assets-sisko/rams/assets/repl:09864666-d33b-4834-8075-80bacc107acf/a5dfd437-dba5-4952-9a83-930c05d73c5a/bdc4dd52-cb63-444b-ae51-7341e92db115"
+storage_version_token = "1788695102598983"
+content_type = "application/octet-stream"

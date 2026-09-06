@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PyVault Share — {{ session.session_id }}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/css/style.css" />
+</head>
+<body>
+  <nav class="navbar">
+    <div class="nav-brand">
+      <span class="brand-icon">⬡</span>
+      <span class="brand-name">PyVault</span>
+      <span class="nav-badge">SHARED SESSION</span>
+    </div>
+    <div class="nav-links"><a href="/" class="nav-link active">Create session</a></div>
+  </nav>
+
+  <main class="main-container share-container">
+    <div class="share-hero">
+      <p class="eyebrow">PUBLIC METADATA · PRIVATE SOURCE</p>
+      <h1 class="page-title">Shared PyVault session</h1>
+      <p class="hero-sub">This link exposes session details only. The Python source remains encrypted and is never rendered here.</p>
+    </div>
+
+    <div class="card share-card">
+      <div class="share-status status-{{ session.status }}">
+        <span class="health-dot"></span>
+        {{ session.status.upper() }}
+      </div>
+      {% if session.label %}
+        <h2 class="share-label">{{ session.label }}</h2>
+      {% endif %}
+      <div class="share-id-row">
+        <span class="meta-label">Session ID</span>
+        <code>{{ session.session_id }}</code>
+      </div>
+      <div class="result-meta">
+        <div class="meta-item"><span class="meta-label">Executions</span><span class="meta-value">{{ session.execution_count }}{% if session.max_executions and session.max_executions > 0 %} / {{ session.max_executions }}{% endif %}</span></div>
+        <div class="meta-item"><span class="meta-label">Created</span><span class="meta-value">{{ session.created_at[:16] }}</span></div>
+        <div class="meta-item"><span class="meta-label">Expires</span><span class="meta-value">{% if session.expires_at %}{{ session.expires_at[:16] }}{% else %}Never{% endif %}</span></div>
+      </div>
+      <div class="library-section">
+        <span class="meta-label">Declared libraries</span>
+        <div class="library-list">
+          {% if session.libraries_list %}
+            {% for library in session.libraries_list %}<span class="library-pill">{{ library }}</span>{% endfor %}
+          {% else %}
+            <span class="muted">None declared</span>
+          {% endif %}
+        </div>
+      </div>
+      <div class="privacy-note">
+        <strong>Source protected.</strong> Only the session ID and declared metadata are public. Use PyVaultRCE with the session ID to run the code in your own Python environment.
+      </div>
+      <a class="btn btn-primary share-home-btn" href="/">Create your own session</a>
+    </div>
+  </main>
+</body>
+</html>

@@ -1,0 +1,1 @@
+- [PyVault runtime reliability](pyvault-runtime.md) — Production imports must initialize storage safely, and legacy SQLite values need boundary normalization.

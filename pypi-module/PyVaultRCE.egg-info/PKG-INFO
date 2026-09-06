@@ -1,6 +1,6 @@
 Metadata-Version: 2.4
 Name: PyVaultRCE
-Version: 2.2.0
+Version: 2.3.0
 Summary: Remote Code Execution & Hosting client for PyVault — source never exposed
 Author: PyVault
 Keywords: remote execution code hosting vault rce session
@@ -40,7 +40,7 @@ pip install PyVaultRCE
 ```python
 from pyvaultrce import CodeManager
 
-# Upload a local .py file → get Session ID
+# Upload a local .py file → get a 21-character Session ID
 sid = CodeManager.enc("my_script.py")
 # [PyVault] ✓ Uploaded  — Session ID : 3a7f1c9b2d0e8a5f41c7e
 
@@ -74,7 +74,8 @@ export PYVAULT_URL=https://your-server.replit.app
 | `CodeManager.run(session_id)` | Fetch and execute code by Session ID |
 | `CodeManager.info(session_id)` | Get session metadata (no exec count increment) |
 | `CodeManager.ping()` | Check server connectivity |
-| `CodeManager.edit(session_id, file_path, admin_token)` | Replace stored code (admin only) |
+| `CodeManager.edit(session_id, file_path, admin_token=...)` | Replace stored code (admin or owner token) |
+| `CodeManager.delete(session_id, owner_token)` | Delete your own session |
 
 ## Supported Paste Services (`enc_url`)
 
@@ -100,8 +101,9 @@ export PYVAULT_URL=https://your-server.replit.app
 
 - Session IDs are 21-character cryptographically random hex strings
 - Source code is never written to disk on the client
-- Edit operations require a server-side admin token
-- Regular users cannot modify stored code
+- Code is encrypted at rest with Fernet on the server
+- Admin edits require the admin access code; owner edits/deletes require the one-time owner token
+- Sessions never expire unless an expiry is explicitly selected
 
 ## License
 

@@ -1,0 +1,16 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "eZAK7nqh3Xe5G8ukrK9f3"
+uri = "file://release/PyVaultRCE-2.3.0.zip"
+type = "unspecified"
+title = "PyVaultRCE 2.3.0 — Complete ZIP"
+description = "Clean PyVault app source, admin panel, session database, deployment config, and updated PyPI client source."
+logical_id = "e9a95f64-25b1-4d8f-9e7c-e0e0fddfd368"
+content_hash = "sha256:9d00360555c39d58ff4996726bb23c31d6fbf44889a5636f3accd10cc29614db"
+size = 163052
+mtime_ms = 1788694247477
+storage_uri = "gcs://replit-rams-assets-sisko/rams/assets/repl:09864666-d33b-4834-8075-80bacc107acf/e9a95f64-25b1-4d8f-9e7c-e0e0fddfd368/88379803-d738-422e-b0a9-f95a8f4e6e83"
+storage_version_token = "1788694265437948"
+content_type = "application/octet-stream"

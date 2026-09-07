@@ -18,5 +18,5 @@ Quick start:
 from .manager import CodeManager
 
 __all__    = ["CodeManager"]
-__version__ = "2.4.0"
+__version__ = "2.5.0"
 __author__  = "PyVault"

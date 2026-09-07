@@ -28,3 +28,17 @@ mtime_ms = 1788695081799
 storage_uri = "gcs://replit-rams-assets-sisko/rams/assets/repl:09864666-d33b-4834-8075-80bacc107acf/a5dfd437-dba5-4952-9a83-930c05d73c5a/bdc4dd52-cb63-444b-ae51-7341e92db115"
 storage_version_token = "1788695102598983"
 content_type = "application/octet-stream"
+
+[[outputs]]
+id = "1rQ0GsKGOzwTAwz2AqIXz"
+uri = "file://release/PyVaultRCE-2.5.0.zip"
+type = "unspecified"
+title = "PyVaultRCE 2.5.0 release ZIP"
+description = "Updated PyVault app, social/profile features, schema reference, PyVaultRCE clients, compatibility client, and clean wheel/sdist artifacts."
+logical_id = "b4ec0269-4065-4976-8b47-b7471f97c813"
+content_hash = "sha256:a796f4fa0f7190dfa16e58e3f42381a07847786cd946c293d551f99a976a4023"
+size = 181653
+mtime_ms = 1788747763408
+storage_uri = "gcs://replit-rams-assets-sisko/rams/assets/repl:09864666-d33b-4834-8075-80bacc107acf/b4ec0269-4065-4976-8b47-b7471f97c813/1f04dd75-a3cb-4b46-9f68-fe8d91d3cf11"
+storage_version_token = "1788747782247652"
+content_type = "application/octet-stream"

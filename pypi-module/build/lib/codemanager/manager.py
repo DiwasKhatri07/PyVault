@@ -3,7 +3,9 @@ manager.py — CodeManager implementation
 """
 
 import os
+import subprocess
 import sys
+import tempfile
 import traceback
 import textwrap
 from typing import Optional
@@ -15,7 +17,7 @@ except ImportError:
         "The 'requests' library is required. Install it with: pip install requests"
     )
 
-_DEFAULT_BASE_URL = "http://localhost:5000"
+_DEFAULT_BASE_URL = "https://secure-code-runner--diwasrepl.replit.app"
 
 # ── Validation helpers ───────────────────────────────────────────────────────
 
@@ -53,6 +55,57 @@ def _emit(message: str, show_terminal=None, *, error=False) -> None:
         print(message, file=sys.stderr if error else sys.stdout, flush=True)
 
 
+def _isolated_run(code: str, session_id: str, timeout: int) -> subprocess.CompletedProcess:
+    """Execute in a short-lived process with clean environment and limits."""
+    def limit_resources():
+        if os.name != "posix":
+            return
+        try:
+            import resource
+            cpu = max(1, min(int(timeout), 30))
+            # Python's runtime reserves virtual address space during startup;
+            # 512 MiB breaks otherwise tiny scripts on some Linux builds.
+            memory = 2 * 1024 * 1024 * 1024
+            resource.setrlimit(resource.RLIMIT_CPU, (cpu, cpu))
+            resource.setrlimit(resource.RLIMIT_AS, (memory, memory))
+            resource.setrlimit(resource.RLIMIT_FSIZE, (10 * 1024 * 1024, 10 * 1024 * 1024))
+        except (ImportError, OSError, ValueError):
+            pass
+
+    clean_env = {
+        key: os.environ[key]
+        for key in ("PATH", "SystemRoot", "SYSTEMROOT", "TEMP", "TMP", "HOME", "LANG", "LC_ALL")
+        if key in os.environ
+    }
+    clean_env.update({"PYTHONNOUSERSITE": "1", "PYTHONUNBUFFERED": "1"})
+    with tempfile.TemporaryDirectory(prefix="pyvault-run-") as workdir:
+        script_path = os.path.join(workdir, "session.py")
+        with open(script_path, "w", encoding="utf-8") as handle:
+            handle.write(code)
+        try:
+            return subprocess.run(
+                [sys.executable, "-I", "-u", script_path],
+                cwd=workdir,
+                env=clean_env,
+                capture_output=True,
+                text=True,
+                timeout=max(1, int(timeout)),
+                check=False,
+                preexec_fn=limit_resources if os.name == "posix" else None,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise TimeoutError(
+                f"Isolated session '{session_id}' exceeded the {timeout}s execution timeout."
+            ) from exc
+
+
+def _emit_child_output(result: subprocess.CompletedProcess) -> None:
+    if result.stdout:
+        print(result.stdout, end="", flush=True)
+    if result.stderr:
+        print(result.stderr, end="", file=sys.stderr, flush=True)
+
+
 # ── CodeManager ─────────────────────────────────────────────────────────────
 
 class CodeManager:
@@ -74,6 +127,9 @@ class CodeManager:
         timeout: int = 30,
         label: str = "",
         libraries = "",
+        username: str = "",
+        description: str = "",
+        tags = "",
     ) -> str:
         """
         Read a local Python file and upload it to the PyVault backend.
@@ -113,7 +169,14 @@ class CodeManager:
         try:
             response = requests.post(
                 url,
-                json={"code": code, "label": label, "libraries": libraries},
+                json={
+                    "code": code,
+                    "label": label,
+                    "libraries": libraries,
+                    "username": username,
+                    "description": description,
+                    "tags": tags,
+                },
                 timeout=timeout,
             )
         except requests.exceptions.ConnectionError:
@@ -158,12 +221,16 @@ class CodeManager:
         timeout: int = 30,
         globals_dict: Optional[dict] = None,
         show_terminal=None,
+        isolated: bool = True,
     ) -> None:
         """
-        Fetch the code for a Session ID from PyVault and execute it locally.
+        Fetch the code for a Session ID from PyVault and execute it in a
+        short-lived isolated subprocess by default.
 
-        The source code is fetched over the network and run via exec() —
-        the caller never has direct access to the source file on disk.
+        The source code is fetched over the network. The default subprocess
+        uses a clean environment, a temporary working directory, and resource
+        limits. Use isolated=False only for trusted code that needs a shared
+        in-process namespace.
 
         Args:
             session_id:   The 21-character hex Session ID.
@@ -224,28 +291,41 @@ class CodeManager:
                 f"Server returned empty code for session '{session_id}'."
             )
 
-        _emit(f"[PyVault] Executing session '{session_id}' (run #{exec_count})…", show_terminal)
+        _emit(
+            f"[PyVault] Executing session '{session_id}' "
+            f"(run #{exec_count}, isolated={isolated})…",
+            show_terminal,
+        )
 
-        namespace = globals_dict if globals_dict is not None else {
-            "__name__": "__pyvault__",
-            "__builtins__": __builtins__,
-        }
-
-        try:
-            compiled = compile(code, f"<pyvault:{session_id}>", "exec")
-            exec(compiled, namespace)
-        except SyntaxError as exc:
-            _emit("\n[PyVault] ✕ Syntax error in remote code:", show_terminal, error=True)
-            _emit(f"  Line {exc.lineno}: {exc.msg}", show_terminal, error=True)
-            if exc.text:
-                _emit(f"  >>> {exc.text.strip()}", show_terminal, error=True)
-            raise
-        except Exception as exc:
-            _emit("\n[PyVault] ✕ Runtime error during execution:", show_terminal, error=True)
-            tb_lines = traceback.format_exc().splitlines()
-            for line in tb_lines:
-                _emit(f"  {line}", show_terminal, error=True)
-            raise
+        if isolated:
+            if globals_dict is not None:
+                raise ValueError("isolated=True cannot use globals_dict; pass isolated=False for a shared namespace.")
+            result = _isolated_run(code, session_id, timeout)
+            _emit_child_output(result)
+            if result.returncode != 0:
+                raise RuntimeError(
+                    f"Isolated session '{session_id}' exited with code {result.returncode}."
+                )
+        else:
+            namespace = globals_dict if globals_dict is not None else {
+                "__name__": "__pyvault__",
+                "__builtins__": __builtins__,
+            }
+            try:
+                compiled = compile(code, f"<pyvault:{session_id}>", "exec")
+                exec(compiled, namespace)
+            except SyntaxError as exc:
+                _emit("\n[PyVault] ✕ Syntax error in remote code:", show_terminal, error=True)
+                _emit(f"  Line {exc.lineno}: {exc.msg}", show_terminal, error=True)
+                if exc.text:
+                    _emit(f"  >>> {exc.text.strip()}", show_terminal, error=True)
+                raise
+            except Exception:
+                _emit("\n[PyVault] ✕ Runtime error during execution:", show_terminal, error=True)
+                tb_lines = traceback.format_exc().splitlines()
+                for line in tb_lines:
+                    _emit(f"  {line}", show_terminal, error=True)
+                raise
 
         _emit("[PyVault] ✓ Execution complete.", show_terminal)
 

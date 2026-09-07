@@ -4,7 +4,9 @@ manager.py — CodeManager implementation for PyVaultRCE
 
 import os
 import re
+import subprocess
 import sys
+import tempfile
 import traceback
 from typing import Optional
 
@@ -23,7 +25,7 @@ try:
 except ImportError:
     _HAS_CRYPTO = False
 
-_DEFAULT_BASE = "http://localhost:5000"
+_DEFAULT_BASE = "https://secure-code-runner--diwasrepl.replit.app"
 _MAX_LINES = 10_000
 _SID_LEN   = 21
 _HEX_SET   = frozenset("0123456789abcdef")
@@ -171,6 +173,62 @@ def _localhost_hint(url: str) -> str:
     return ""
 
 
+def _isolated_run(code: str, session_id: str, timeout: int) -> subprocess.CompletedProcess:
+    """Run fetched code in a short-lived process with a clean environment.
+
+    This is a defense-in-depth boundary for the client. It is intentionally
+    not described as a container or a complete OS sandbox: callers who need
+    hostile-code isolation should use a dedicated VM/container policy.
+    """
+    def limit_resources():
+        if os.name != "posix":
+            return
+        try:
+            import resource
+            cpu = max(1, min(int(timeout), 30))
+            # Python's runtime reserves virtual address space during startup;
+            # 512 MiB breaks otherwise tiny scripts on some Linux builds.
+            memory = 2 * 1024 * 1024 * 1024
+            resource.setrlimit(resource.RLIMIT_CPU, (cpu, cpu))
+            resource.setrlimit(resource.RLIMIT_AS, (memory, memory))
+            resource.setrlimit(resource.RLIMIT_FSIZE, (10 * 1024 * 1024, 10 * 1024 * 1024))
+        except (ImportError, OSError, ValueError):
+            pass
+
+    clean_env = {}
+    for key in ("PATH", "SystemRoot", "SYSTEMROOT", "TEMP", "TMP", "HOME", "LANG", "LC_ALL"):
+        if key in os.environ:
+            clean_env[key] = os.environ[key]
+    clean_env.update({"PYTHONNOUSERSITE": "1", "PYTHONUNBUFFERED": "1"})
+
+    with tempfile.TemporaryDirectory(prefix="pyvault-run-") as workdir:
+        script_path = os.path.join(workdir, "session.py")
+        with open(script_path, "w", encoding="utf-8") as handle:
+            handle.write(code)
+        try:
+            return subprocess.run(
+                [sys.executable, "-I", "-u", script_path],
+                cwd=workdir,
+                env=clean_env,
+                capture_output=True,
+                text=True,
+                timeout=max(1, int(timeout)),
+                check=False,
+                preexec_fn=limit_resources if os.name == "posix" else None,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise TimeoutError(
+                f"Isolated session '{session_id}' exceeded the {timeout}s execution timeout."
+            ) from exc
+
+
+def _emit_child_output(result: subprocess.CompletedProcess) -> None:
+    if result.stdout:
+        print(result.stdout, end="", flush=True)
+    if result.stderr:
+        print(result.stderr, end="", file=sys.stderr, flush=True)
+
+
 def _upload_code(
     code: str,
     base_url: Optional[str],
@@ -179,6 +237,9 @@ def _upload_code(
     max_executions: int = 0,
     label: str = "",
     libraries = "",
+    username: str = "",
+    description: str = "",
+    tags = "",
 ) -> tuple:
     """Internal: push code string to /pyv/save. Returns session metadata."""
     if not code.strip():
@@ -197,6 +258,12 @@ def _upload_code(
         payload["label"] = str(label)[:200]
     if libraries:
         payload["libraries"] = _normalise_libraries(libraries)
+    if username:
+        payload["username"] = str(username)[:24]
+    if description:
+        payload["description"] = str(description)[:1000]
+    if tags:
+        payload["tags"] = tags
 
     url  = _base(base_url) + "/pyv/save"
     resp = _http_post(url, payload, timeout)
@@ -230,7 +297,7 @@ class CodeManager:
 
     Environment variables:
         PYVAULT_URL — base URL of the PyVault server
-         (default: http://localhost:5000; set PYVAULT_URL for a hosted server)
+         (default: the PyVault public deployment; set PYVAULT_URL to override)
         PYVAULT_TERMINAL — on/off terminal status messages (default: on)
     """
 
@@ -243,6 +310,9 @@ class CodeManager:
         max_executions: int = 0,
         label: str = "",
         libraries = "",
+        username: str = "",
+        description: str = "",
+        tags = "",
         show_terminal: Optional[bool] = None,
     ) -> str:
         """
@@ -265,7 +335,8 @@ class CodeManager:
         if not code.strip():
             raise ValueError(f"The file '{file_path}' is empty — nothing to upload.")
         sid, owner_token, share_url, safe_libraries = _upload_code(
-            code, base_url, timeout, expires_in_hours, max_executions, label, libraries
+            code, base_url, timeout, expires_in_hours, max_executions, label, libraries,
+            username, description, tags
         )
         _emit(f"[PyVault] ✓ Uploaded  — Session ID : {sid}", show_terminal)
         _emit(f"[PyVault]   Source    : {os.path.abspath(file_path)}", show_terminal)
@@ -287,6 +358,9 @@ class CodeManager:
         timeout: int = 30,
         label: str = "",
         libraries = "",
+        username: str = "",
+        description: str = "",
+        tags = "",
         show_terminal: Optional[bool] = None,
     ) -> str:
         """
@@ -311,7 +385,7 @@ class CodeManager:
             resp = requests.get(
                 raw_url,
                 timeout=timeout,
-                headers={"User-Agent": "PyVaultRCE/2.4"},
+                headers={"User-Agent": "PyVaultRCE/2.5"},
             )
             resp.raise_for_status()
         except requests.exceptions.ConnectionError:
@@ -330,7 +404,8 @@ class CodeManager:
             raise ValueError("Downloaded content is empty.")
 
         sid, owner_token, share_url, safe_libraries = _upload_code(
-            code, base_url, timeout, label=label, libraries=libraries
+            code, base_url, timeout, label=label, libraries=libraries,
+            username=username, description=description, tags=tags
         )
         _emit(f"[PyVault] ✓ Uploaded from URL — Session ID : {sid}", show_terminal)
         _emit(f"[PyVault]   Source : {paste_url}", show_terminal)
@@ -352,20 +427,26 @@ class CodeManager:
         timeout: int = 30,
         _ns: Optional[dict] = None,
         show_terminal: Optional[bool] = None,
+        isolated: bool = True,
     ) -> None:
         """
         Fetch the encrypted code for a Session ID from PyVault, decrypt it,
-        and execute it locally.
+        and execute it in a short-lived isolated subprocess by default.
 
-        The source code is transmitted encrypted, decrypted in-memory, never
-        written to disk, and is not accessible after execution.
+        The source code is transmitted encrypted and decrypted in memory. The
+        default subprocess writes it only to a temporary file for the child
+        process, then removes that directory after execution.
 
         Args:
             session_id: The 21-character hex Session ID.
             base_url:   Override the server URL.
             timeout:    HTTP timeout in seconds.
             _ns:        Optional namespace dict passed to exec(). Leave as None
-                        unless you intentionally want to share a namespace.
+                         unless you intentionally want to share a namespace;
+                         providing it requires isolated=False.
+            isolated:   Use the short-lived subprocess boundary (default True).
+                         Set False only for trusted code that needs an in-process
+                         namespace.
 
         Raises:
             ValueError, ConnectionError, RuntimeError, plus any exception
@@ -416,26 +497,39 @@ class CodeManager:
         if not code.strip():
             raise RuntimeError(f"Decrypted code is empty for session '{session_id}'.")
 
-        _emit(f"[PyVault] ▶ Running session '{session_id}' (execution #{run_count})…", show_terminal)
+        _emit(
+            f"[PyVault] ▶ Running session '{session_id}' "
+            f"(execution #{run_count}, isolated={isolated})…",
+            show_terminal,
+        )
 
-        namespace = _ns if _ns is not None else {
-            "__name__": "__pyvault__",
-            "__builtins__": __builtins__,
-        }
-
-        try:
-            exec(compile(code, f"<vault:{session_id[:8]}…>", "exec"), namespace)
-        except SyntaxError as exc:
-            _emit("\n[PyVault] ✕ Syntax error:", show_terminal, error=True)
-            _emit(f"  Line {exc.lineno}: {exc.msg}", show_terminal, error=True)
-            if exc.text:
-                _emit(f"  >>> {exc.text.strip()}", show_terminal, error=True)
-            raise
-        except Exception:
-            _emit("\n[PyVault] ✕ Runtime error:", show_terminal, error=True)
-            for line in traceback.format_exc().splitlines():
-                _emit(f"  {line}", show_terminal, error=True)
-            raise
+        if isolated:
+            if _ns is not None:
+                raise ValueError("isolated=True cannot use _ns; pass isolated=False for a shared namespace.")
+            result = _isolated_run(code, session_id, timeout)
+            _emit_child_output(result)
+            if result.returncode != 0:
+                raise RuntimeError(
+                    f"Isolated session '{session_id}' exited with code {result.returncode}."
+                )
+        else:
+            namespace = _ns if _ns is not None else {
+                "__name__": "__pyvault__",
+                "__builtins__": __builtins__,
+            }
+            try:
+                exec(compile(code, f"<vault:{session_id[:8]}…>", "exec"), namespace)
+            except SyntaxError as exc:
+                _emit("\n[PyVault] ✕ Syntax error:", show_terminal, error=True)
+                _emit(f"  Line {exc.lineno}: {exc.msg}", show_terminal, error=True)
+                if exc.text:
+                    _emit(f"  >>> {exc.text.strip()}", show_terminal, error=True)
+                raise
+            except Exception:
+                _emit("\n[PyVault] ✕ Runtime error:", show_terminal, error=True)
+                for line in traceback.format_exc().splitlines():
+                    _emit(f"  {line}", show_terminal, error=True)
+                raise
 
         _emit("[PyVault] ✓ Execution complete.", show_terminal)
 

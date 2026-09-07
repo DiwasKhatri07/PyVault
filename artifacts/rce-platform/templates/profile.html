@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>@{{ profile.username }} — PyVault profile</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/css/style.css" />
+</head>
+<body>
+  <nav class="navbar">
+    <div class="nav-brand"><span class="brand-icon">⬡</span><span class="brand-name">PyVault</span><span class="nav-badge">PROFILE</span></div>
+    <div class="nav-links"><a href="/" class="nav-link active">Create session</a></div>
+  </nav>
+  <main class="main-container profile-container">
+    <div class="profile-hero">
+      <p class="eyebrow">PUBLIC PROFILE</p>
+      <h1 class="page-title">@{{ profile.username }} {% if profile.verified %}<span class="verified-badge">✓</span>{% endif %}</h1>
+      <p class="hero-sub">
+        {% if profile.verified %}Verified profile · {% endif %}
+        Public PyVault sessions by this creator.
+        {% if not profile.verified %}A post reaches automatic verification at {{ auto_verify_views }} views.{% endif %}
+      </p>
+    </div>
+    <div class="profile-posts">
+      {% for post in posts %}
+        <a class="card profile-post-card" href="/s/{{ post.share_slug }}">
+          <div class="profile-post-top">
+            <span class="status-badge status-active">PUBLIC</span>
+            <span class="muted">{{ post.views }} views</span>
+          </div>
+          <h2>{{ post.label or 'Untitled session' }}</h2>
+          {% if post.description %}<p>{{ post.description }}</p>{% endif %}
+          <div class="library-list">
+            {% for tag in (post.tags or '').split(', ') if tag %}<span class="tag-pill">#{{ tag }}</span>{% endfor %}
+          </div>
+        </a>
+      {% else %}
+        <div class="card empty-state"><h3>No public sessions yet</h3></div>
+      {% endfor %}
+    </div>
+  </main>
+</body>
+</html>

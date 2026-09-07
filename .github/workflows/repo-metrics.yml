@@ -1,0 +1,37 @@
+name: Repository metrics
+
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  update-metrics:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Collect public repository metrics
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          repo="https://api.github.com/repos/${REPOSITORY}"
+          curl --fail --silent --show-error -H "Authorization: Bearer ${GH_TOKEN}" -H "Accept: application/vnd.github+json" "$repo" > /tmp/repo.json
+          curl --fail --silent --show-error -H "Authorization: Bearer ${GH_TOKEN}" -H "Accept: application/vnd.github+json" "$repo/commits?per_page=1" > /tmp/commits.json
+          jq -n \
+            --argjson repo "$(cat /tmp/repo.json)" \
+            --argjson commits "$(cat /tmp/commits.json)" \
+            '{updated_at: (now | todate), stars: $repo.stargazers_count, forks: $repo.forks_count, open_issues: $repo.open_issues_count, watchers: $repo.subscribers_count, latest_commit: ($commits[0].sha // "unknown"), latest_commit_date: ($commits[0].commit.author.date // null)}' \
+            > docs/metrics.json
+      - name: Commit updated metrics
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/metrics.json
+          git diff --cached --quiet || git commit -m "chore: update repository metrics"
+          git push

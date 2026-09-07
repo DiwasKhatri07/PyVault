@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 420" role="img" aria-labelledby="title desc">
+  <title id="title">PyVault animated code vault</title>
+  <desc id="desc">A dark neon illustration of code flowing into a secure vault with a session ID.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1"><stop stop-color="#080b1c"/><stop offset="1" stop-color="#21104b"/></linearGradient>
+    <linearGradient id="neon" x1="0" x2="1"><stop stop-color="#7c3aed"/><stop offset="1" stop-color="#22d3ee"/></linearGradient>
+    <filter id="glow"><feGaussianBlur stdDeviation="5" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+  <rect width="1200" height="420" rx="28" fill="url(#bg)"/>
+  <g opacity=".18" stroke="#a78bfa"><path d="M0 80h1200M0 160h1200M0 240h1200M0 320h1200"/><path d="M120 0v420M240 0v420M360 0v420M480 0v420M600 0v420M720 0v420M840 0v420M960 0v420M1080 0v420"/></g>
+  <g fill="none" stroke="url(#neon)" stroke-width="3" filter="url(#glow)">
+    <path d="M150 210h170c48 0 48-85 98-85h82" stroke-dasharray="10 12"><animate attributeName="stroke-dashoffset" from="0" to="-44" dur="1.8s" repeatCount="indefinite"/></path>
+    <path d="M150 210h170c48 0 48 85 98 85h82" stroke-dasharray="10 12"><animate attributeName="stroke-dashoffset" from="0" to="-44" dur="1.8s" repeatCount="indefinite"/></path>
+  </g>
+  <g transform="translate(545 105)" filter="url(#glow)"><rect width="250" height="210" rx="24" fill="#11152d" stroke="url(#neon)" stroke-width="4"/><path d="M65 108V82a60 60 0 0 1 120 0v26" fill="none" stroke="#22d3ee" stroke-width="12"/><rect x="42" y="98" width="166" height="84" rx="14" fill="#201746" stroke="#a78bfa" stroke-width="3"/><circle cx="125" cy="140" r="12" fill="#22d3ee"><animate attributeName="r" values="10;14;10" dur="1.5s" repeatCount="indefinite"/></circle><path d="M125 150v16" stroke="#22d3ee" stroke-width="6" stroke-linecap="round"/></g>
+  <g font-family="ui-monospace, SFMono-Regular, Menlo, monospace" fill="#e9d5ff"><text x="62" y="82" font-size="25" fill="#a78bfa">$ pyvault</text><text x="62" y="118" font-size="18">upload → vault → run</text><text x="62" y="350" font-size="16" fill="#67e8f9">SESSION_ID: 3a7f1c9b2d0e8a5f41c7e</text><text x="865" y="178" font-size="20" fill="#c4b5fd">PYVAULTRCE</text><text x="865" y="211" font-size="15" fill="#67e8f9">private code hosting</text><text x="865" y="245" font-size="15" fill="#94a3b8">Python 3.8+ • Flask • SQLite</text></g>
+</svg>

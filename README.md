@@ -15,6 +15,23 @@
 
 </div>
 
+<p align="center">
+  <img src="docs/assets/pyvault-hero.svg" alt="Animated PyVault code vault illustration" width="100%">
+</p>
+
+<p align="center">
+  <img src="docs/assets/pyvault-demo.gif" alt="Animated PyVaultRCE terminal demo" width="860">
+</p>
+
+<div align="center">
+
+![Stars](https://img.shields.io/github/stars/DiwasKhatri07/PyVault?style=flat-square&logo=github)
+![Forks](https://img.shields.io/github/forks/DiwasKhatri07/PyVault?style=flat-square&logo=github)
+![Issues](https://img.shields.io/github/issues/DiwasKhatri07/PyVault?style=flat-square)
+![Last commit](https://img.shields.io/github/last-commit/DiwasKhatri07/PyVault?style=flat-square)
+
+</div>
+
 > **Important:** PyVault is a code-execution platform, not a hostile-code sandbox. Use it only with code you trust and deploy production workloads behind a deliberately designed isolation boundary.
 
 ## What is PyVault?
@@ -22,6 +39,26 @@
 PyVault is a small, self-hostable Flask service for storing Python snippets and exposing them through short-lived session identifiers. The companion `PyVaultRCE` package provides a straightforward Python API for uploading, inspecting, and running those sessions. Source is stored on the server and the client works with a 21-character hexadecimal session ID.
 
 The project is designed for demos, teaching, controlled automation, and lightweight internal workflows where a simple code vault is more useful than a large platform.
+
+## Live resources
+
+| Resource | Link |
+| --- | --- |
+| Live web application | [secure-code-runner--diwasrepl.replit.app](https://secure-code-runner--diwasrepl.replit.app/) |
+| PyPI package | [`PyVaultRCE` 2.5.0](https://pypi.org/project/PyVaultRCE/2.5.0/) |
+| GitHub repository | [DiwasKhatri07/PyVault](https://github.com/DiwasKhatri07/PyVault) |
+| Issues and feature requests | [GitHub Issues](https://github.com/DiwasKhatri07/PyVault/issues) |
+| Releases | [GitHub Releases](https://github.com/DiwasKhatri07/PyVault/releases) |
+
+## Repository pulse
+
+The public repository metrics are refreshed daily by [`.github/workflows/repo-metrics.yml`](.github/workflows/repo-metrics.yml). The generated snapshot is available in [`docs/metrics.json`](docs/metrics.json).
+
+| Metric | Current snapshot |
+| --- | --- |
+| Stars | See [live GitHub count](https://github.com/DiwasKhatri07/PyVault/stargazers) |
+| Forks | See [live GitHub count](https://github.com/DiwasKhatri07/PyVault/network/members) |
+| Activity | Daily metrics workflow + standard GitHub activity graph |
 
 ## Highlights
 
@@ -154,6 +191,8 @@ See the full [security policy](SECURITY.md) before deploying this project public
 
 Contributions are welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.md), read the [Code of Conduct](CODE_OF_CONDUCT.md), and open an issue before making a large behavioral change. Please include tests or a reproducible verification step with pull requests.
 
+See [CONTRIBUTORS.md](CONTRIBUTORS.md) for developer credits and the maintainer list.
+
 ## Maintainer
 
 **Diwas Khatri** — creator and maintainer of PyVault.
@@ -162,6 +201,8 @@ Contributions are welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.md), read t
 - Project: [github.com/DiwasKhatri07/PyVault](https://github.com/DiwasKhatri07/PyVault)
 - Live deployment: [secure-code-runner--diwasrepl.replit.app](https://secure-code-runner--diwasrepl.replit.app/)
 - Package: [PyVaultRCE on PyPI](https://pypi.org/project/PyVaultRCE/2.5.0/)
+
+If you search for **Diwas Khatri PyVault**, this repository is the canonical source, documentation hub, and release home for the project.
 
 ## License
 

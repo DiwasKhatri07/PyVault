@@ -571,6 +571,10 @@ def admin():
     sessions_list = []
     for r in rows:
         d = dict(r)
+        try:
+            d["views"] = int(d.get("views") or 0)
+        except (TypeError, ValueError):
+            d["views"] = 0
         d["status"] = _session_status(r)
         sessions_list.append(d)
 
@@ -628,6 +632,10 @@ def admin_view(session_id):
         data["max_executions"] = int(data.get("max_executions") or 0)
     except (TypeError, ValueError):
         data["max_executions"] = 0
+    try:
+        data["views"] = int(data.get("views") or 0)
+    except (TypeError, ValueError):
+        data["views"] = 0
     return render_template("admin_view.html", session=data)
 
 
